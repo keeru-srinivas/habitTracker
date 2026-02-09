@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker Admin Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f0f23;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+            border: 1px solid #2d2d44;
+        }
+        
+        .header h1 {
+            color: #e0e0e0;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #b0b0b0;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            text-align: center;
+            border: 1px solid #2d2d44;
+        }
+        
+        .stat-card h3 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card p {
+            color: #b0b0b0;
+            font-size: 0.9em;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .tab-button {
+            background: #1a1a2e;
+            border: 1px solid #2d2d44;
+            border-bottom: none;
+            padding: 15px 30px;
+            border-radius: 10px 10px 0 0;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            color: #b0b0b0;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .tab-button:hover {
+            background: #252540;
+            color: #e0e0e0;
+        }
+        
+        .tab-button.active {
+            background: #16213e;
+            color: #667eea;
+            border-color: #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 0 10px 10px 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid #2d2d44;
+            border-top: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: #16213e;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        th, td {
+            padding: 15px 12px;
+            text-align: left;
+            border-bottom: 1px solid #2d2d44;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            font-size: 0.95em;
+            letter-spacing: 0.5px;
+        }
+        
+        th:first-child {
+            width: 120px;
+            min-width: 120px;
+            max-width: 120px;
+        }
+        
+        tbody tr {
+            transition: background-color 0.2s;
+        }
+        
+        tbody tr:hover {
+            background: #252540;
+        }
+        
+        tbody tr:nth-child(even) {
+            background: #1f1f35;
+        }
+        
+        tbody tr:nth-child(even):hover {
+            background: #2a2a45;
+        }
+        
+        td {
+            color: #e0e0e0;
+            font-size: 0.9em;
+        }
+        
+        .id-cell {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75em;
+            color: #9ca3af;
+            word-break: break-all;
+            width: 120px;
+            max-width: 120px;
+        }
+        
+        .date-cell {
+            font-weight: 500;
+            color: #b0b0b0;
+        }
+        
+        .empty-cell {
+            color: #666;
+            font-style: italic;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-success {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .badge-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .badge-info {
+            background: #2196f3;
+            color: white;
+        }
+        
+        .badge-warning {
+            background: #ff9800;
+            color: white;
+        }
+        
+        .section-title {
+            color: #e0e0e0;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-title::before {
+            content: "";
+            width: 4px;
+            height: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+        }
+        
+        .data-table {
+            max-height: 650px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .data-table::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .data-table::-webkit-scrollbar-track {
+            background: #1a1a2e;
+            border-radius: 4px;
+        }
+        
+        .data-table::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+        
+        .data-table::-webkit-scrollbar-thumb:hover {
+            background: #5568d3;
+        }
+        
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        
+        .refresh-btn:hover {
+            background: #5568d3;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 40px;
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .empty-state::before {
+            content: "📭";
+            display: block;
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        
+        .full-id {
+            font-family: 'Courier New', monospace;
+            font-size: 0.7em;
+            color: #9ca3af;
+            background: #0f0f23;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            border: 1px solid #2d2d44;
+        }
+        
+        .full-id:hover {
+            max-width: none;
+            white-space: normal;
+            word-break: break-all;
+            z-index: 100;
+            position: relative;
+            background: #1a1a2e;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Habit Tracker Admin Panel</h1>
+            <p>View all users, habits, and entries in one place</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <h3>{{ stats.totalUsers }}</h3>
+                <p>Total Users</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stats.totalHabits }}</h3>
+                <p>Total Habits</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stats.activeHabits }}</h3>
+                <p>Active Habits</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stats.archivedHabits }}</h3>
+                <p>Archived Habits</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stats.totalEntries }}</h3>
+                <p>Total Entries</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stats.completedEntries }}</h3>
+                <p>Completed Entries</p>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-button active" onclick="showTab('users')">👥 Users</button>
+            <button class="tab-button" onclick="showTab('habits')">🎯 Habits</button>
+            <button class="tab-button" onclick="showTab('entries')">✅ Entries</button>
+        </div>
+        
+        <!-- Users Tab -->
+        <div id="users" class="tab-content active">
+            <h2 class="section-title">All Users</h2>
+            <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+            <div class="data-table">
+                {% if users %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Created At</th>
+                            <th>Habits Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td class="id-cell">
+                                <span class="full-id" title="{{ user.id }}">{{ user.id }}</span>
+                            </td>
+                            <td><strong style="color: #e0e0e0;">{{ user.name if user.name and user.name != '' else '—' }}</strong></td>
+                            <td style="color: #667eea;">{{ user.email }}</td>
+                            <td class="date-cell">{{ user.createdAt if user.createdAt else '—' }}</td>
+                            <td>
+                                <span class="badge badge-info">
+                                    {{ habitsByUser[user.id]|length if user.id in habitsByUser else 0 }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <p>No users found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Habits Tab -->
+        <div id="habits" class="tab-content">
+            <h2 class="section-title">All Habits</h2>
+            <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+            <div class="data-table">
+                {% if habits %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>User ID</th>
+                            <th>Frequency</th>
+                            <th>Start Date</th>
+                            <th>Status</th>
+                            <th>Entries Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for habit in habits %}
+                        <tr>
+                            <td class="id-cell">
+                                <span class="full-id" title="{{ habit.id }}">{{ habit.id }}</span>
+                            </td>
+                            <td><strong style="color: #e0e0e0; font-size: 1.05em;">{{ habit.title }}</strong></td>
+                            <td class="id-cell">
+                                <span class="full-id" title="{{ habit.userId }}">{{ habit.userId }}</span>
+                            </td>
+                            <td>
+                                <span class="badge {% if habit.frequency == 'daily' %}badge-info{% else %}badge-warning{% endif %}">
+                                    {{ habit.frequency|upper }}
+                                </span>
+                            </td>
+                            <td class="date-cell">{{ habit.startDate if habit.startDate else '—' }}</td>
+                            <td>
+                                {% if habit.isArchived %}
+                                <span class="badge badge-danger">Archived</span>
+                                {% else %}
+                                <span class="badge badge-success">Active</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge badge-info">
+                                    {{ entriesByHabit[habit.id]|length if habit.id in entriesByHabit else 0 }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <p>No habits found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Entries Tab -->
+        <div id="entries" class="tab-content">
+            <h2 class="section-title">All Habit Entries</h2>
+            <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+            <div class="data-table">
+                {% if entries %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Habit ID</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Completed At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in entries %}
+                        <tr>
+                            <td class="id-cell">
+                                <span class="full-id" title="{{ entry.id }}">{{ entry.id if entry.id else '—' }}</span>
+                            </td>
+                            <td class="id-cell">
+                                <span class="full-id" title="{{ entry.habitId }}">{{ entry.habitId if entry.habitId else '—' }}</span>
+                            </td>
+                            <td class="date-cell">
+                                <strong>{{ entry.date if entry.date else '—' }}</strong>
+                            </td>
+                            <td>
+                                {% if entry.completed %}
+                                <span class="badge badge-success">✓ Completed</span>
+                                {% else %}
+                                <span class="badge badge-danger">✗ Not Completed</span>
+                                {% endif %}
+                            </td>
+                            <td class="date-cell">
+                                {{ entry.completedAt if entry.completedAt and entry.completedAt != 'None' else '—' }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <p>No entries found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            // Remove active class from all buttons
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>

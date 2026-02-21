@@ -69,7 +69,21 @@ class ApiClient {
     }
 
     if (e.response != null) {
-      return ServerException(e.response?.data?['message'] ?? "Server error");
+      final data = e.response?.data;
+      if (data is Map<String, dynamic>) {
+        // FastAPI uses "detail" for HTTPException and validation errors
+        final detail = data['detail'];
+        if (detail is String) {
+          return ServerException(detail);
+        }
+        if (detail is List && detail.isNotEmpty) {
+          final first = detail.first;
+          final msg = first is Map ? (first['msg'] ?? first['message']) : detail.toString();
+          return ServerException(msg?.toString() ?? "Validation error");
+        }
+        return ServerException(data['message'] as String? ?? "Server error");
+      }
+      return ServerException("Server error");
     }
     return UnknownException("Unexpected error occurred");
   }

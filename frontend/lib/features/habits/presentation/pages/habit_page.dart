@@ -134,7 +134,7 @@ class HabitView extends StatelessWidget {
                           : ListView.builder(
                         itemCount: habits.length,
                         itemBuilder: (context, index) {
-                          return HabitCard(habit: habits[index]);
+                          return HabitCard(habit: habits[index], colorIndex: index);
                         },
                       ),
                     ),

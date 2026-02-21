@@ -1,4 +1,4 @@
-# habit_traacker
+# habit_tracker
 
 A new Flutter project.
 

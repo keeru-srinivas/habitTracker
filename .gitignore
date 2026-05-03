@@ -1,15 +1,6 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+# Repo root — Python/deploy ignores: backend/.gitignore
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+HabitTracker App/**/build/
+HabitTracker App/.gradle/
+HabitTracker App/**/.cxx/
+*.iml

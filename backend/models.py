@@ -117,6 +117,19 @@ class DailyThoughtResponse(BaseModel):
     )
 
 
+class DeviceEventResponse(BaseModel):
+    id: str
+    userId: str
+    eventName: str
+    ipAddress: str
+    userAgent: str
+    location: dict = Field(
+        default_factory=dict,
+        description="Coarse IP-derived location (city/region/country/lat/long) when available.",
+    )
+    createdAt: datetime
+
+
 class ProgressDaySnapshot(BaseModel):
     """One heatmap cell (UTC): either a calendar day (daily habit strip) or an ISO week (weekly strip)."""
 

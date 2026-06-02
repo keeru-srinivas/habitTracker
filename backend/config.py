@@ -5,9 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- HTTP port --------------------------------------------------------------
-# Default **8010** — habit-tracker lane (clear of 8000 clutter); pairs with nginx
-# `proxy_pass` + PM2 `ecosystem.config.cjs`. Override: `HABITTRACKER_PORT=9001`
-HABITTRACKER_PORT = int(os.getenv("HABITTRACKER_PORT", "8010"))
+HABITTRACKER_PORT = int(os.getenv("HABITTRACKER_PORT", "9210"))
 
 # Default to firebase-config.json (env key stays FIREBASE_CREDENTIALS_PATH)
 defaultPath = "firebase-config.json"

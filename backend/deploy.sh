@@ -7,7 +7,7 @@
 #   sudo ./deploy.sh               # full: venv, pm2, nginx, certbot
 #
 # Optional env:
-#   HABITTRACKER_PORT=8010        # must match nginx upstream in nginx-habittracker.conf
+#   HABITTRACKER_PORT=9210        # must match nginx upstream in nginx-habittracker.conf
 #   DOMAIN=habit.thatinsaneguy.com
 #   CERTBOT_EMAIL=you@example.com   # required for first non-interactive cert (Let's Encrypt)
 #   SKIP_SSL=1                    # only HTTP nginx + app (no certbot)
@@ -23,7 +23,7 @@ NGINX_TEMPLATE="${APP_ROOT}/nginx-habittracker.conf"
 
 DOMAIN="${DOMAIN:-habit.thatinsaneguy.com}"
 # Same default as config.py HABITTRACKER_PORT
-PORT="${HABITTRACKER_PORT:-8010}"
+PORT="${HABITTRACKER_PORT:-9210}"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -132,10 +132,10 @@ nginx_install_conf() {
 }
 
 substitute_port_in_conf() {
-    # Ensure upstream port matches HABITTRACKER_PORT (default 8010 in template)
+    # Ensure upstream port matches HABITTRACKER_PORT (default 9210 in template)
     local tmp
     tmp="$(mktemp)"
-    sed "s/127.0.0.1:8010/127.0.0.1:${PORT}/g" "${NGINX_TEMPLATE}" >"${tmp}"
+    sed "s/127.0.0.1:9210/127.0.0.1:${PORT}/g" "${NGINX_TEMPLATE}" >"${tmp}"
     echo "${tmp}"
 }
 

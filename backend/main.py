@@ -11,10 +11,12 @@ from starlette.templating import Jinja2Templates
 import util.dbUtils as dbUtils
 from config import firebaseWebApiKey
 from util.authIdentity import signInWithEmailPassword
+from util.deviceTracking import extractClientIp, lookupIpLocation, readUserAgent
 from models import (
     AuthCredentials,
     AuthTokenResponse,
     DailyThoughtResponse,
+    DeviceEventResponse,
     HabitCheckRequest,
     HabitCreate,
     HabitEntryCreate,
@@ -101,7 +103,7 @@ app = FastAPI(
             "description": "Production (TLS)",
         },
         {
-            "url": "http://127.0.0.1:8010",
+            "url": "http://127.0.0.1:9210",
             "description": "Local dev (default HABITTRACKER_PORT; override in .env)",
         },
     ],
@@ -259,7 +261,7 @@ async def daily_thought(
         "Use `Authorization: Bearer <accessToken>` on all protected routes."
     ),
 )
-async def authLogin(body: AuthCredentials):
+async def authLogin(body: AuthCredentials, request: Request):
     try:
         data = await signInWithEmailPassword(body.email, body.password)
     except ValueError as e:
@@ -267,6 +269,19 @@ async def authLogin(body: AuthCredentials):
         if "misconfiguration" in msg.lower() or "FIREBASE_WEB_API_KEY" in msg:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=msg)
+    try:
+        ipAddress = extractClientIp(request)
+        location = await lookupIpLocation(ipAddress)
+        await dbUtils.saveDeviceEvent(
+            userId=data["localId"],
+            eventName="login",
+            ipAddress=ipAddress,
+            userAgent=readUserAgent(request),
+            location=location,
+        )
+    except Exception:
+        # Never fail login if telemetry storage/geolocation is unavailable.
+        pass
     return buildAuthTokenResponse(data)
 
 
@@ -281,7 +296,7 @@ async def authLogin(body: AuthCredentials):
         "(same as `POST /api/users` followed by login)."
     ),
 )
-async def authSignup(userData: UserCreate):
+async def authSignup(userData: UserCreate, request: Request):
     try:
         await dbUtils.createUser(userData)
     except Exception as e:
@@ -296,6 +311,19 @@ async def authSignup(userData: UserCreate):
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Account created but token issuance failed: {msg}",
         )
+    try:
+        ipAddress = extractClientIp(request)
+        location = await lookupIpLocation(ipAddress)
+        await dbUtils.saveDeviceEvent(
+            userId=data["localId"],
+            eventName="signup",
+            ipAddress=ipAddress,
+            userAgent=readUserAgent(request),
+            location=location,
+        )
+    except Exception:
+        # Never fail signup if telemetry storage/geolocation is unavailable.
+        pass
     return buildAuthTokenResponse(data)
 
 
@@ -329,6 +357,31 @@ async def getMe(currentUser: dict = Depends(verifyFirebaseToken)):
         return await dbUtils.getUser(currentUser["uid"])
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get(
+    "/api/me/devices",
+    response_model=list[DeviceEventResponse],
+    tags=["users"],
+    summary="Recent device login events",
+    description=(
+        "Returns the authenticated user's latest device/auth events "
+        "(IP, user-agent, coarse IP location)."
+    ),
+)
+async def getMyDeviceEvents(
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description="Maximum number of newest events to return (1-200).",
+    ),
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    try:
+        return await dbUtils.getUserDeviceEvents(currentUser["uid"], limit)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get(

@@ -25,6 +25,7 @@ The API allows **any origin** (`Access-Control-Allow-Origin: *`). Auth uses **`A
 ## Features
 
 - **Auth**: `POST /api/auth/signup` and `POST /api/auth/login` — backend creates users and exchanges credentials for a Firebase ID JWT (`accessToken`). No Firebase SDK on the client.
+- **Device telemetry**: auth routes also store a lightweight `deviceEvents` record (IP, user-agent, coarse location lookup) so you can review device sign-ins and map approximate locations.
 - **Users & habits**: CRUD habits, check off days, list entries (Bearer required).
 - **Web UI (dev)**: `GET /app` uses plain `fetch` only (same flow as a mobile app hitting your REST API).
 
@@ -145,6 +146,7 @@ Public:
 All other `/api/*` routes require a valid **accessToken**. Examples:
 
 - `GET /api/me` — current user profile from Firestore
+- `GET /api/me/devices?limit=50` — your recent auth/device events (`eventName`, `ipAddress`, `userAgent`, `location`, `createdAt`)
 - `GET /api/users/{userId}` — only if `userId` matches token UID
 - `GET /api/users/email/{email}` — only for your own email
 - `PUT /api/users/{userId}/name`

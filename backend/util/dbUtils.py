@@ -8,6 +8,53 @@ import secrets
 
 from util.timeUtils import isoUtcNow, utcNow, utcToday
 
+
+async def saveDeviceEvent(
+    userId: str,
+    eventName: str,
+    ipAddress: str,
+    userAgent: str,
+    location: dict | None = None,
+) -> dict:
+    """Store a lightweight device/login event for audits and device history."""
+    try:
+        docRef = db.collection("deviceEvents").document()
+        eventDoc = {
+            "id": docRef.id,
+            "userId": userId,
+            "eventName": eventName,
+            "ipAddress": ipAddress,
+            "userAgent": userAgent,
+            "location": location or {},
+            "createdAt": utcNow(),
+        }
+        docRef.set(eventDoc)
+        return eventDoc
+    except Exception as e:
+        raise Exception(f"Error saving device event: {str(e)}")
+
+
+async def getUserDeviceEvents(userId: str, limit: int = 50) -> list[dict]:
+    """Fetch recent device/login events for one user, newest first."""
+    try:
+        docs = (
+            db.collection("deviceEvents")
+            .where("userId", "==", userId)
+            .order_by("createdAt", direction="DESCENDING")
+            .limit(limit)
+            .stream()
+        )
+        events = []
+        for doc in docs:
+            event = doc.to_dict() or {}
+            if "id" not in event:
+                event["id"] = doc.id
+            events.append(event)
+        return events
+    except Exception as e:
+        raise Exception(f"Error getting device events: {str(e)}")
+
+
 def parseStoredDate(value: Any) -> date:
     """Normalize Firestore/string/datetime values to a calendar date."""
     if value is None:

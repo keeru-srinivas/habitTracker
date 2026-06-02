@@ -1,11 +1,11 @@
 /**
- * PM2: uvicorn on 127.0.0.1 (TLS at nginx). Port must match `config.HABITTRACKER_PORT` (default 8010).
+ * PM2: uvicorn on 127.0.0.1 (TLS at nginx). Port must match `config.HABITTRACKER_PORT` (default 9210).
  * Typically started by `deploy.sh` in this directory.
  */
 const path = require('path');
 
 const appRoot = __dirname;
-const port = process.env.HABITTRACKER_PORT || '8010';
+const port = process.env.HABITTRACKER_PORT || '9210';
 
 module.exports = {
   apps: [

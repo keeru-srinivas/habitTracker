@@ -1,6 +1,22 @@
-# Repo root — Python/deploy ignores: backend/.gitignore
+# Repo root — Python/deploy ignores: see backend/.gitignore
+
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
 .DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Legacy frontend folder from remote main
 HabitTracker App/**/build/
 HabitTracker App/.gradle/
 HabitTracker App/**/.cxx/
-*.iml

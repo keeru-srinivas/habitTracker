@@ -1,5 +1,3 @@
-# Repo root — Python/deploy ignores: see backend/.gitignore
-
 *.iml
 .gradle
 /local.properties
@@ -15,8 +13,3 @@
 .externalNativeBuild
 .cxx
 local.properties
-
-# Legacy frontend folder from remote main
-HabitTracker App/**/build/
-HabitTracker App/.gradle/
-HabitTracker App/**/.cxx/

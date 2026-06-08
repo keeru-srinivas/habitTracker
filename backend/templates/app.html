@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker — Web</title>
+    <style>
+        :root { --fg: #1b4332; --accent: #2d6a4f; --bg: #f3f6f4; }
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; margin: 0; color: var(--fg); background: var(--bg); min-height: 100vh; }
+        .wrap { max-width: 480px; margin: 0 auto; padding: 20px; }
+        h1 { font-size: 1.25rem; margin: 0 0 12px; }
+        .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+        label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+        input, button, select { width: 100%; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 15px; }
+        button { background: var(--accent); color: #fff; border: none; font-weight: 600; cursor: pointer; }
+        button.secondary { background: #6c757d; }
+        button.danger { background: #c0392b; }
+        button.danger.outline { background: #fff; color: #c0392b; border: 1px solid #d68a83; }
+        button:disabled { opacity: .6; cursor: not-allowed; }
+        .row { display: flex; gap: 8px; }
+        .row button { flex: 1; margin-bottom: 0; }
+        .habit { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #eee; }
+        .habit:last-child { border-bottom: none; }
+        .habit-main { flex: 1; min-width: 0; }
+        .habit-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; width: 112px; }
+        .habit-actions button { margin-bottom: 0; padding: 8px 10px; font-size: 14px; }
+        .muted { color: #666; font-size: 13px; }
+        .err { color: #c0392b; font-size: 14px; margin-bottom: 8px; }
+        .banner { background: #fff3cd; border: 1px solid #ffc10755; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+        code { font-size: 12px; background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+        .hidden { display: none !important; }
+        .prog-meta { margin-top: 8px; }
+        .prog-bar-track { height: 6px; background: #e8ede9; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+        .prog-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.2s; }
+        .prog-numbers { font-size: 12px; line-height: 1.4; }
+        .prog-range { font-size: 11px; margin-top: 2px; }
+        .heatmap { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 6px; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .dot-done { background: #2d6a4f; }
+        .dot-missed { background: #c0392b; }
+        .dot-skipped { background: #e67e22; }
+        .dot-off { background: #dcdde1; }
+        .dot-pending-week { background: #f4d03f; }
+        .dot-before { background: #f0f0f0; border: 1px dashed #bdc3c7; box-sizing: border-box; }
+        .legend-mini { font-size: 11px; margin-top: 4px; line-height: 1.35; }
+        .thought-card { border-left: 4px solid var(--accent); }
+        .thought-quote { font-size: 15px; line-height: 1.45; margin: 0 0 8px; font-style: italic; color: var(--fg); }
+        .thought-meta { font-size: 12px; margin: 0; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Habit Tracker</h1>
+
+    {% if not hasAuthBackend %}
+    <div class="banner">
+        Set <code>FIREBASE_WEB_API_KEY</code> in <code>.env</code> so the server can issue tokens (<code>POST /api/auth/login</code>).
+        Restart <code>python main.py</code>.
+    </div>
+    {% endif %}
+
+    <div id="authSection" class="card">
+        <div id="authError" class="err hidden"></div>
+        <label>Email</label>
+        <input type="email" id="email" autocomplete="username" placeholder="you@example.com" />
+
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" />
+
+        <label>Name (signup only)</label>
+        <input type="text" id="displayName" autocomplete="name" placeholder="Optional" />
+
+        <div class="row">
+            <button type="button" id="btnSignIn">Sign in</button>
+            <button type="button" id="btnRegister" class="secondary">Sign up</button>
+        </div>
+        <p class="muted">Uses only REST: <code>POST /api/auth/login</code> and <code>POST /api/auth/signup</code>. Token stored in sessionStorage for <code>Authorization: Bearer</code>.</p>
+    </div>
+
+    <div id="appSection" class="hidden">
+        <div class="card">
+            <p>Signed in as <strong id="who"></strong></p>
+            <button type="button" id="btnLogout" class="secondary">Sign out</button>
+        </div>
+
+        <div class="card thought-card">
+            <h2 style="font-size:1rem;margin:0 0 8px;">Thought for today</h2>
+            <p id="thoughtBody" class="thought-quote">Loading…</p>
+            <p id="thoughtAttrib" class="thought-meta muted hidden"></p>
+        </div>
+
+        <div class="card">
+            <h2 style="font-size:1rem;margin:0 0 12px;">Add habit</h2>
+            <div id="habitErr" class="err hidden"></div>
+            <label>Title</label>
+            <input type="text" id="habitTitle" placeholder="Morning run" />
+            <label>Frequency</label>
+            <select id="habitFreq">
+                <option value="daily">daily</option>
+                <option value="weekly">weekly</option>
+            </select>
+            <label>Start date</label>
+            <input type="date" id="habitStart" />
+            <button type="button" id="btnAddHabit">Create habit</button>
+        </div>
+
+        <div class="card">
+            <h2 style="font-size:1rem;margin:0 0 8px;">Today <span id="utcDayLabel" class="muted" style="font-weight:400;font-size:13px;"></span></h2>
+            <p class="muted" style="font-size:12px;margin:0 0 10px;">Checks use <code>GET /api/clock</code> (UTC). Progress uses <code>GET /api/habits/{id}/progress</code> (42-day window). Dots: <strong>daily</strong> = last 14 UTC days; <strong>weekly</strong> = last 14 ISO weeks (Mon–Sun), one dot per week.</p>
+            <div id="habitList" class="muted">Loading…</div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var TOKEN_KEY = 'habitTrackerAccessToken';
+    var UID_KEY = 'habitTrackerUserId';
+
+    var authSection = document.getElementById('authSection');
+    var appSection = document.getElementById('appSection');
+    var authError = document.getElementById('authError');
+
+    function getAccessToken() {
+        return sessionStorage.getItem(TOKEN_KEY) || '';
+    }
+
+    function setSession(accessToken, userId) {
+        sessionStorage.setItem(TOKEN_KEY, accessToken);
+        sessionStorage.setItem(UID_KEY, userId || '');
+    }
+
+    function clearSession() {
+        sessionStorage.removeItem(TOKEN_KEY);
+        sessionStorage.removeItem(UID_KEY);
+    }
+
+    function showAuthErr(msg) {
+        authError.textContent = msg || '';
+        authError.classList.toggle('hidden', !msg);
+    }
+
+    function apiHeaders() {
+        var t = getAccessToken();
+        var h = { 'Content-Type': 'application/json' };
+        if (t) h['Authorization'] = 'Bearer ' + t;
+        return h;
+    }
+
+    async function apiFetch(path, options) {
+        options = options || {};
+        var headers = Object.assign({}, apiHeaders(), options.headers || {});
+        if (options.method === 'DELETE' || options.method === 'GET') {
+            delete headers['Content-Type'];
+        }
+        var res = await fetch(path, Object.assign({}, options, { headers: headers }));
+        var text = await res.text();
+        var data = null;
+        if (text && res.status !== 204) {
+            try { data = JSON.parse(text); } catch (_) { data = text; }
+        }
+        if (!res.ok) {
+            var detail = (data && data.detail) ? data.detail : text || res.statusText;
+            throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        }
+        return data;
+    }
+
+    function dotClassForStatus(st) {
+        var m = { done: 'dot-done', missed: 'dot-missed', skipped: 'dot-skipped', offSchedule: 'dot-off', beforeStart: 'dot-before', pendingWeek: 'dot-pending-week' };
+        return m[st] || 'dot-off';
+    }
+
+    function sliceIso(d) {
+        if (!d) return '';
+        return String(d).slice(0, 10);
+    }
+
+    function renderProgressBlock(p) {
+        if (!p) return '';
+        var pct = Math.round((p.completionRate || 0) * 100);
+        var html = '<div class="prog-meta">';
+        html += '<div class="prog-bar-track"><div class="prog-bar-fill" style="width:' + pct + '%"></div></div>';
+        html += '<div class="prog-numbers muted">' + p.doneCount + ' done · ' + p.missedCount + ' missed · ' + p.skippedCount + ' skipped · streak ' + p.currentStreak + ' · best ' + p.bestStreak + '</div>';
+        html += '<div class="prog-range muted">' + sliceIso(p.rangeStart) + ' → ' + sliceIso(p.rangeEnd) + ' · ' + pct + '% of scheduled</div>';
+        var weekStrip = p.frequency === 'weekly' && p.last14Weeks && p.last14Weeks.length;
+        var dayStrip = p.last14Days && p.last14Days.length;
+        if (weekStrip || dayStrip) {
+            var strip = weekStrip ? p.last14Weeks : p.last14Days;
+            var heatTitle = weekStrip
+                ? 'Last 14 UTC ISO weeks (Mon–Sun), oldest → newest'
+                : 'Last 14 UTC days, oldest → newest';
+            html += '<div class="heatmap" title="' + escapeHtml(heatTitle) + '">';
+            for (var j = 0; j < strip.length; j++) {
+                var row = strip[j];
+                var ds = sliceIso(row.calendarDate);
+                var tip = ds + ': ' + row.status;
+                if (weekStrip) {
+                    var mon = new Date(ds + 'T12:00:00Z');
+                    var sun = new Date(mon.getTime());
+                    sun.setUTCDate(sun.getUTCDate() + 6);
+                    var sunStr = sun.toISOString().slice(0, 10);
+                    tip = ds + ' → ' + sunStr + ' (UTC week): ' + row.status;
+                }
+                html += '<span class="dot ' + dotClassForStatus(row.status) + '" title="' + escapeHtml(tip) + '"></span>';
+            }
+            html += '</div>';
+            html += '<div class="legend-mini muted">' + (weekStrip
+                ? '● done · ● missed · ● skipped · ● pending week · ▫ before habit start'
+                : '● done · ● missed · ● skipped · ▫ before start') + '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    async function refreshHabits() {
+        var habitList = document.getElementById('habitList');
+        var userId = sessionStorage.getItem(UID_KEY);
+        if (!userId) return;
+        habitList.textContent = 'Loading…';
+        try {
+            var clock = await apiFetch('/api/clock');
+            var utcDay = clock.utcCalendarDate;
+            var utcLabel = document.getElementById('utcDayLabel');
+            if (utcLabel) utcLabel.textContent = '(UTC ' + utcDay + ')';
+
+            var habits = await apiFetch('/api/users/' + encodeURIComponent(userId) + '/habits');
+            if (!habits.length) {
+                habitList.textContent = 'No habits yet — add one above.';
+                return;
+            }
+
+            var progressResults = await Promise.all(habits.map(function (h) {
+                return apiFetch('/api/habits/' + encodeURIComponent(h.id) + '/progress').then(function (p) {
+                    return { id: h.id, progress: p };
+                }).catch(function () {
+                    return { id: h.id, progress: null };
+                });
+            }));
+            var progressById = {};
+            for (var r = 0; r < progressResults.length; r++) {
+                progressById[progressResults[r].id] = progressResults[r].progress;
+            }
+
+            var today = utcDay;
+            var html = '';
+            for (var i = 0; i < habits.length; i++) {
+                var h = habits[i];
+                var entryDone = false;
+                try {
+                    var entries = await apiFetch('/api/habits/' + encodeURIComponent(h.id) + '/entries?startDate=' + today + '&endDate=' + today);
+                    if (entries && entries.length && entries[0].completed) entryDone = true;
+                } catch (_) {}
+                var prog = progressById[h.id];
+                html += '<div class="habit">';
+                html += '<div class="habit-main"><strong>' + escapeHtml(h.title) + '</strong><br><span class="muted">' + escapeHtml(h.frequency) + '</span>';
+                if (h.startDate) html += '<br><span class="muted">starts ' + escapeHtml(String(h.startDate).slice(0, 10)) + '</span>';
+                html += renderProgressBlock(prog);
+                html += '</div>';
+                html += '<div class="habit-actions">';
+                html += '<button type="button" data-check-habit="' + encodeURIComponent(h.id) + '" data-done="' + (entryDone ? '1' : '0') + '">' + (entryDone ? 'Undo' : 'Done') + '</button>';
+                html += '<button type="button" class="danger outline" data-delete-habit="' + encodeURIComponent(h.id) + '" title="Permanently delete">Delete</button>';
+                html += '</div></div>';
+            }
+            habitList.innerHTML = html;
+            habitList.querySelectorAll('button[data-check-habit]').forEach(function (btn) {
+                btn.onclick = async function () {
+                    var hid = decodeURIComponent(btn.getAttribute('data-check-habit'));
+                    var done = btn.getAttribute('data-done') === '1';
+                    btn.disabled = true;
+                    try {
+                        await apiFetch('/api/habits/check', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                habitId: hid,
+                                completed: !done,
+                            }),
+                        });
+                        await refreshHabits();
+                    } catch (e) {
+                        alert(e.message);
+                    }
+                    btn.disabled = false;
+                };
+            });
+            habitList.querySelectorAll('button[data-delete-habit]').forEach(function (btn) {
+                btn.onclick = async function () {
+                    var hid = decodeURIComponent(btn.getAttribute('data-delete-habit'));
+                    if (!confirm('Delete this habit and its check-in history? This cannot be undone.')) return;
+                    btn.disabled = true;
+                    try {
+                        await apiFetch('/api/habits/' + encodeURIComponent(hid), { method: 'DELETE' });
+                        await refreshHabits();
+                    } catch (e) {
+                        alert(e.message);
+                    }
+                    btn.disabled = false;
+                };
+            });
+        } catch (e) {
+            habitList.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    async function loadDailyThought() {
+        var bodyEl = document.getElementById('thoughtBody');
+        var attribEl = document.getElementById('thoughtAttrib');
+        if (!bodyEl) return;
+        bodyEl.textContent = 'Loading…';
+        if (attribEl) attribEl.classList.add('hidden');
+        try {
+            var t = await apiFetch('/api/thought');
+            var q = (t && t.text) ? String(t.text) : '';
+            bodyEl.textContent = q ? '"' + q + '"' : '—';
+            if (attribEl) {
+                var line = '';
+                if (t && t.author) line = '— ' + t.author;
+                if (t && t.source && t.source !== 'fallback')
+                    line = line ? line + ' · ' + t.source : t.source;
+                attribEl.textContent = line;
+                attribEl.classList.toggle('hidden', !line);
+            }
+        } catch (e) {
+            bodyEl.textContent = 'Could not load a thought right now.';
+            if (attribEl) attribEl.classList.add('hidden');
+        }
+    }
+
+    async function showApp() {
+        authSection.classList.add('hidden');
+        appSection.classList.remove('hidden');
+        try {
+            var me = await apiFetch('/api/me');
+            document.getElementById('who').textContent = me.email || sessionStorage.getItem(UID_KEY);
+        } catch (e) {
+            document.getElementById('who').textContent = sessionStorage.getItem(UID_KEY) || '';
+        }
+        try {
+            var clock = await apiFetch('/api/clock');
+            var el = document.getElementById('habitStart');
+            if (el && clock && clock.utcCalendarDate) el.value = clock.utcCalendarDate;
+        } catch (_) {}
+        loadDailyThought();
+        refreshHabits();
+    }
+
+    function showLogin() {
+        appSection.classList.add('hidden');
+        authSection.classList.remove('hidden');
+    }
+
+    async function tryRestoreSession() {
+        if (!getAccessToken()) {
+            showLogin();
+            return;
+        }
+        try {
+            await apiFetch('/api/me');
+            await showApp();
+        } catch (_) {
+            clearSession();
+            showLogin();
+        }
+    }
+
+    document.getElementById('btnSignIn').onclick = async function () {
+        showAuthErr('');
+        var email = document.getElementById('email').value.trim();
+        var password = document.getElementById('password').value;
+        try {
+            var data = await apiFetch('/api/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({ email: email, password: password }),
+            });
+            setSession(data.accessToken, data.userId);
+            await showApp();
+        } catch (e) {
+            showAuthErr(e.message);
+        }
+    };
+
+    document.getElementById('btnRegister').onclick = async function () {
+        showAuthErr('');
+        var email = document.getElementById('email').value.trim();
+        var password = document.getElementById('password').value;
+        var name = document.getElementById('displayName').value.trim();
+        try {
+            var data = await apiFetch('/api/auth/signup', {
+                method: 'POST',
+                body: JSON.stringify({ email: email, password: password, name: name || null }),
+            });
+            setSession(data.accessToken, data.userId);
+            await showApp();
+        } catch (e) {
+            showAuthErr(e.message || String(e));
+        }
+    };
+
+    document.getElementById('btnLogout').onclick = function () {
+        clearSession();
+        showLogin();
+    };
+
+    document.getElementById('btnAddHabit').onclick = async function () {
+        var habitErr = document.getElementById('habitErr');
+        habitErr.classList.add('hidden');
+        var title = document.getElementById('habitTitle').value.trim();
+        var frequency = document.getElementById('habitFreq').value;
+        var startDate = document.getElementById('habitStart').value;
+        if (!title || !startDate) {
+            habitErr.textContent = 'Title and start date required';
+            habitErr.classList.remove('hidden');
+            return;
+        }
+        try {
+            await apiFetch('/api/habits', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: title,
+                    frequency: frequency,
+                    startDate: startDate,
+                    userId: '',
+                }),
+            });
+            document.getElementById('habitTitle').value = '';
+            await refreshHabits();
+        } catch (e) {
+            habitErr.textContent = e.message;
+            habitErr.classList.remove('hidden');
+        }
+    };
+
+    tryRestoreSession();
+})();
+</script>
+</body>
+</html>

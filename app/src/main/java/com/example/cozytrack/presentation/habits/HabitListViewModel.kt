@@ -19,10 +19,12 @@ import com.example.cozytrack.domain.usecase.habit.GetHabitsUseCase
 import com.example.cozytrack.domain.usecase.habit.GetServerClockUseCase
 import com.example.cozytrack.domain.usecase.habit.UpdateHabitUseCase
 import com.example.cozytrack.domain.usecase.thought.GetThoughtUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +42,7 @@ data class HabitListUiState(
     val progressRangeLabel: String = "",
     val newHabitTitle: String = "",
     val newHabitFrequency: Frequency = Frequency.Daily,
+    val habitListFrequencyFilter: Frequency = Frequency.Daily,
     val includeArchived: Boolean = false,
     val editingHabitId: String? = null,
     val editingHabitTitle: String = "",
@@ -47,7 +50,10 @@ data class HabitListUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedOut: Boolean = false
-)
+) {
+    val filteredHabits: List<Habit>
+        get() = habits.filter { it.frequency == habitListFrequencyFilter }
+}
 
 data class HabitHeatmapDay(
     val calendarDate: String,
@@ -55,7 +61,8 @@ data class HabitHeatmapDay(
     val isToday: Boolean
 )
 
-class HabitListViewModel(
+@HiltViewModel
+class HabitListViewModel @Inject constructor(
     private val getServerClockUseCase: GetServerClockUseCase,
     private val getHabitsUseCase: GetHabitsUseCase,
     private val getEntriesForDayUseCase: GetEntriesForDayUseCase,
@@ -82,6 +89,10 @@ class HabitListViewModel(
 
     fun onFrequencyChange(value: Frequency) {
         _uiState.update { it.copy(newHabitFrequency = value) }
+    }
+
+    fun onHabitListFrequencyFilterChange(value: Frequency) {
+        _uiState.update { it.copy(habitListFrequencyFilter = value) }
     }
 
     fun onIncludeArchivedChange(value: Boolean) {
@@ -228,6 +239,8 @@ class HabitListViewModel(
     }
 
     fun onHabitCheckedChange(habitId: String, checked: Boolean) {
+        if (!checked || habitId in _uiState.value.checkedHabitIds) return
+
         viewModelScope.launch {
             val previousState = _uiState.value
 
@@ -251,13 +264,14 @@ class HabitListViewModel(
             }
 
             val previousCheckedIds = _uiState.value.checkedHabitIds
-            _uiState.update {
-                it.copy(
-                    checkedHabitIds = if (checked) {
-                        it.checkedHabitIds + habitId
-                    } else {
-                        it.checkedHabitIds - habitId
-                    },
+            _uiState.update { state ->
+                state.copy(
+                    checkedHabitIds = state.checkedHabitIds + habitId,
+                    heatmapByHabitId = markHabitCompleteInHeatmap(
+                        heatmapByHabitId = state.heatmapByHabitId,
+                        habitId = habitId,
+                        calendarDate = state.utcCalendarDate
+                    ),
                     errorMessage = null
                 )
             }
@@ -433,6 +447,25 @@ class HabitListViewModel(
             _uiState.update { it.copy(errorMessage = message) }
         }
     }
+}
+
+private fun markHabitCompleteInHeatmap(
+    heatmapByHabitId: Map<String, List<HabitHeatmapDay>>,
+    habitId: String,
+    calendarDate: String
+): Map<String, List<HabitHeatmapDay>> {
+    if (calendarDate.isBlank()) return heatmapByHabitId
+
+    val habitDays = heatmapByHabitId[habitId] ?: return heatmapByHabitId
+    return heatmapByHabitId + (
+        habitId to habitDays.map { day ->
+            if (day.calendarDate == calendarDate) {
+                day.copy(completed = true)
+            } else {
+                day
+            }
+        }
+        )
 }
 
 private fun String.monthStartDateOrNull(): String? {

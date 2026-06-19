@@ -4,13 +4,14 @@ import com.example.cozytrack.core.network.ApiResult
 import com.example.cozytrack.data.remote.HabitTrackerApi
 import com.example.cozytrack.domain.model.Thought
 import com.example.cozytrack.domain.repository.ThoughtRepository
+import javax.inject.Inject
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-class ThoughtRepositoryImpl(
+class ThoughtRepositoryImpl @Inject constructor(
     private val api: HabitTrackerApi
 ) : ThoughtRepository {
     override suspend fun getThought(): ApiResult<Thought> {

@@ -1,6 +1,6 @@
 # CozyTrack Android Frontend Guide
 
-This guide explains the current Android frontend implementation for the Habit Tracker API from the beginning: Gradle setup, dependencies, clean architecture, API calls, token storage, navigation, ViewModels, habit check-ins, streaks, heatmap UI, and the cozy bear login/signup/home screens.
+This guide explains the current Android frontend implementation for the Habit Tracker API from the beginning: Gradle setup, dependencies, clean architecture, Hilt dependency injection, API calls, token storage, navigation, bottom tabs, ViewModels, habit check-ins, streaks, heatmap UI, stats charts, and the cozy bear login/signup/home screens.
 
 The app follows one important backend rule: Android never talks directly to Firebase. The app only calls the HTTP API:
 
@@ -20,13 +20,17 @@ CozyTrack is a Kotlin + Jetpack Compose Android app that lets a user:
 - Load only the habits owned by the logged-in user.
 - Check in for the current server UTC day.
 - Show today's completed state on the home page.
-- Open a habit detail page to see that habit's 365-day read-only heatmap.
+- Open a habit detail page to see that habit's GitHub-style 365-day heatmap and streaks.
 - Show current and best streaks per habit, not globally.
 - Edit, archive, restore, and delete habits.
 - Log out and clear the saved session.
 - Return to login automatically when the backend says the token expired.
+- Navigate between Home, Habits, Stats, and Profile using a functional bottom navigation bar.
+- View a simplified habit list on the Habits tab.
+- View a 30-day consistency line chart and streak overview on the Stats tab.
+- Manage account settings, archived-habit visibility, and logout from the Profile tab.
 
-The final UI uses a cozy bear theme with warm cream/brown colors, rounded cards, teddy/paw emojis, and separate login/signup/home screens.
+The final UI uses a cozy bear theme with warm cream/brown colors, rounded cards, teddy/paw emojis, separate login/signup screens, and a four-tab main shell after login.
 
 ## 2. Backend Rules Used By The App
 
@@ -70,7 +74,8 @@ app/src/main/java/com/example/cozytrack/
   MainActivity.kt
 
   core/
-    di/AppContainer.kt
+    di/NetworkModule.kt
+    di/RepositoryModule.kt
     network/ApiResult.kt
     network/AuthInterceptor.kt
     session/SessionManager.kt
@@ -115,10 +120,19 @@ app/src/main/java/com/example/cozytrack/
     auth/LoginViewModel.kt
     auth/SignUpScreen.kt
     auth/SignUpViewModel.kt
+    components/CozyBottomBar.kt
+    components/CozyColors.kt
+    components/CozyFormatters.kt
     habits/HabitListScreen.kt
+    habits/HabitHeatmapGrid.kt
+    habits/HabitsTabScreen.kt
     habits/HabitListViewModel.kt
+    main/MainScreen.kt
     navigation/AppNavHost.kt
+    navigation/BottomNavDestination.kt
     navigation/Routes.kt
+    profile/ProfileScreen.kt
+    stats/StatsScreen.kt
 ```
 
 Why this structure exists:
@@ -154,6 +168,9 @@ retrofitKotlinxSerializationConverter = "1.0.0"
 kotlinxSerializationJson = "1.9.0"
 datastore = "1.1.7"
 coroutines = "1.10.2"
+hilt = "2.59.2"
+hiltNavigationCompose = "1.2.0"
+ksp = "2.2.10-2.0.2"
 ```
 
 Current added libraries:
@@ -168,12 +185,17 @@ retrofit-kotlinx-serialization-converter = { group = "com.jakewharton.retrofit",
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 ```
 
-Current added plugin:
+Current added plugins:
 
 ```toml
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ```
 
 Why these exist:
@@ -185,6 +207,9 @@ Why these exist:
 - `kotlinx-serialization-json`: serializes/deserializes JSON DTOs.
 - `datastore-preferences`: stores access token and user ID.
 - `kotlinx-coroutines-android`: coroutine support on Android.
+- `hilt-android`: dependency injection for repositories, use cases, and ViewModels.
+- `hilt-compiler`: KSP annotation processor for Hilt.
+- `hilt-navigation-compose`: `hiltViewModel()` in Compose navigation destinations.
 
 ## 5. Root `build.gradle.kts`
 
@@ -195,6 +220,8 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.hilt) apply false
+    alias(libs.plugins.ksp) apply false
 }
 ```
 
@@ -202,17 +229,19 @@ Why:
 
 - Plugin versions are declared once.
 - The app module applies the plugins it needs.
-- We intentionally do not add Hilt here because the project had plugin compatibility issues with the current AGP setup, so the final app uses manual dependency injection.
+- Hilt 2.59.2+ is required for AGP 9 compatibility.
 
 ## 6. App `build.gradle.kts`
 
-The app applies Android, Compose, and Kotlin serialization:
+The app applies Android, Compose, Kotlin serialization, Hilt, and KSP:
 
 ```kotlin
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 ```
 
@@ -266,7 +295,20 @@ implementation(libs.retrofit.kotlinx.serialization.converter)
 implementation(libs.kotlinx.serialization.json)
 implementation(libs.androidx.datastore.preferences)
 implementation(libs.kotlinx.coroutines.android)
+implementation(libs.hilt.android)
+ksp(libs.hilt.compiler)
+implementation(libs.hilt.navigation.compose)
 ```
+
+AGP 9 note:
+
+Because this project uses AGP 9 built-in Kotlin with KSP, `gradle.properties` includes:
+
+```properties
+android.disallowKotlinSourceSets=false
+```
+
+This allows KSP-generated sources to work until the KSP plugin fully migrates to the AGP 9 `android.sourceSets` DSL.
 
 Result:
 
@@ -296,34 +338,27 @@ The custom application class is registered:
 Why:
 
 - Internet permission is required for backend API calls.
-- `CozyTrackApplication` creates the manual dependency container when the app starts.
+- `CozyTrackApplication` bootstraps Hilt when the app starts.
 
 ## 8. Application Class
 
 `CozyTrackApplication.kt`:
 
 ```kotlin
-class CozyTrackApplication : Application() {
-    lateinit var appContainer: AppContainer
-        private set
-
-    override fun onCreate() {
-        super.onCreate()
-        appContainer = AppContainer(this)
-    }
-}
+@HiltAndroidApp
+class CozyTrackApplication : Application()
 ```
 
 Why:
 
-- This is the root of manual dependency injection.
-- It creates one `AppContainer` for the app.
-- Screens and ViewModels receive dependencies from this container.
+- `@HiltAndroidApp` generates the Hilt application component.
+- Hilt creates the dependency graph once for the whole app process.
+- ViewModels, repositories, and network clients are injected automatically.
 
 Result:
 
-- No Hilt setup is required.
-- Dependencies are still centralized and testable.
+- No manual `AppContainer` is required.
+- Dependencies stay centralized and testable through Hilt modules.
 
 ## 9. API Result Wrapper
 
@@ -759,40 +794,94 @@ Result:
 
 - Check-ins match server time, not device time.
 
-## 17. Manual Dependency Injection
+## 17. Hilt Dependency Injection
 
-`AppContainer.kt` creates all dependencies:
+CozyTrack uses Hilt instead of a manual service locator.
+
+### NetworkModule
+
+`core/di/NetworkModule.kt` provides Retrofit and OkHttp:
 
 ```kotlin
-class AppContainer(context: Context) {
-    val sessionManager = SessionManager(context)
-
-    @OptIn(ExperimentalSerializationApi::class)
-    private val json = Json {
+@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+    @Provides
+    @Singleton
+    fun provideJson(): Json = Json {
         ignoreUnknownKeys = true
         isLenient = true
         explicitNulls = false
     }
 
-    private val okHttpClient = OkHttpClient.Builder()
-        .addInterceptor(AuthInterceptor(sessionManager))
-        .addInterceptor(
-            HttpLoggingInterceptor().apply {
-                redactHeader("Authorization")
-                level = if (BuildConfig.DEBUG) {
-                    HttpLoggingInterceptor.Level.BODY
-                } else {
-                    HttpLoggingInterceptor.Level.NONE
-                }
-            }
-        )
-        .build()
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient { ... }
 
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL)
-        .client(okHttpClient)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
+    @Provides
+    @Singleton
+    fun provideRetrofit(okHttpClient: OkHttpClient, json: Json): Retrofit { ... }
+
+    @Provides
+    @Singleton
+    fun provideHabitTrackerApi(retrofit: Retrofit): HabitTrackerApi { ... }
+}
+```
+
+### RepositoryModule
+
+`core/di/RepositoryModule.kt` binds repository interfaces to implementations:
+
+```kotlin
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class RepositoryModule {
+    @Binds
+    @Singleton
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindHabitRepository(impl: HabitRepositoryImpl): HabitRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindThoughtRepository(impl: ThoughtRepositoryImpl): ThoughtRepository
+}
+```
+
+### Injectable classes
+
+These classes use `@Inject constructor(...)`:
+
+- `SessionManager`
+- `AuthInterceptor`
+- `AuthRepositoryImpl`
+- `HabitRepositoryImpl`
+- `ThoughtRepositoryImpl`
+- all use cases in `domain/usecase/`
+
+ViewModels use `@HiltViewModel`:
+
+```kotlin
+@HiltViewModel
+class LoginViewModel @Inject constructor(
+    private val loginUseCase: LoginUseCase
+) : ViewModel()
+```
+
+Compose screens obtain ViewModels with:
+
+```kotlin
+val viewModel: LoginViewModel = hiltViewModel()
+```
+
+`MainActivity` uses field injection for startup auth checks:
+
+```kotlin
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    @Inject lateinit var sessionManager: SessionManager
 }
 ```
 
@@ -802,11 +891,13 @@ Why:
 - `explicitNulls = false` supports partial update requests.
 - `AuthInterceptor` attaches token automatically.
 - `redactHeader("Authorization")` hides tokens in logs.
+- Hilt removes manual ViewModel factories and the old `AppContainer`.
 
 Result:
 
 - One consistent Retrofit client is used everywhere.
-- ViewModels are created with factories from this container.
+- ViewModels receive dependencies through constructor injection.
+- Adding a new dependency usually means adding `@Inject` and, if needed, a `@Provides` or `@Binds` method.
 
 ## 18. Use Cases
 
@@ -832,7 +923,7 @@ GetThoughtUseCase
 Example:
 
 ```kotlin
-class CheckHabitUseCase(
+class CheckHabitUseCase @Inject constructor(
     private val repository: HabitRepository
 ) {
     suspend operator fun invoke(habitId: String, completed: Boolean) =
@@ -843,7 +934,7 @@ class CheckHabitUseCase(
 Why:
 
 - ViewModels call use cases instead of repositories directly.
-- This keeps UI logic separate from app actions.
+- Hilt can construct use cases automatically because they have `@Inject` constructors.
 - It makes each user action easy to find.
 
 Result:
@@ -852,40 +943,70 @@ Result:
 
 ## 19. Navigation
 
+The app uses two navigation layers:
+
+1. **App-level** `NavHost` in `AppNavHost.kt` for login, signup, and the logged-in shell.
+2. **Inner** `NavHost` in `MainScreen.kt` for bottom tabs and habit detail.
+
 Routes:
 
 ```kotlin
 object Routes {
     const val LOGIN = "login"
     const val SIGN_UP = "sign_up"
-    const val HABITS = "habits"
+    const val MAIN = "main"
+    const val TABS = "tabs"
     const val HABIT_DETAIL = "habit_detail"
 
     fun habitDetail(habitId: String) = "$HABIT_DETAIL/$habitId"
 }
 ```
 
-`AppNavHost.kt` creates screens:
+`AppNavHost.kt` creates the top-level screens:
 
 ```kotlin
 NavHost(
     navController = navController,
-    startDestination = startDestination
+    startDestination = startDestination,
+    modifier = Modifier.fillMaxSize()
 ) {
     composable(Routes.LOGIN) { ... }
     composable(Routes.SIGN_UP) { ... }
-    composable(Routes.HABITS) { ... }
-    composable("${Routes.HABIT_DETAIL}/{habitId}") { ... }
+    composable(Routes.MAIN) {
+        val viewModel: HabitListViewModel = hiltViewModel()
+        MainScreen(viewModel = viewModel, onLoggedOut = { ... })
+    }
+}
+```
+
+After login, the app opens `Routes.MAIN`. `MainScreen` owns a nested `NavHost`:
+
+```kotlin
+NavHost(
+    navController = innerNavController,
+    startDestination = Routes.TABS
+) {
+    composable(Routes.TABS) { /* Home / Habits / Stats / Profile tab content */ }
+    composable("${Routes.HABIT_DETAIL}/{habitId}") { HabitDetailScreen(...) }
+}
+```
+
+Bottom tabs are selected inside `Routes.TABS`:
+
+```kotlin
+enum class BottomNavDestination {
+    HOME, HABITS, STATS, PROFILE
 }
 ```
 
 Why:
 
-- Login, signup, habits, and habit detail are separate screens.
-- Successful login/signup navigates to the habit screen.
-- Tapping a habit navigates to `habit_detail/{habitId}`.
-- The detail route receives the selected habit ID and shows only that habit's streak/grid data.
-- Logout navigates back to login.
+- Login and signup stay at the app level so they replace the whole logged-in shell.
+- Habit detail is nested inside `MainScreen` so it shares the same `HabitListViewModel` instance as the tabs.
+- Nesting detail inside the main shell keeps back navigation reliable and avoids creating a second ViewModel with empty state.
+- Tapping a habit calls `innerNavController.navigate(Routes.habitDetail(habitId))`.
+- The bottom bar hides while detail is open, then returns when the user taps Back.
+- Logout navigates back to login from Profile or when the token expires.
 
 ## 20. App Start Logic
 
@@ -893,10 +1014,10 @@ Why:
 
 ```kotlin
 val startDestination by produceState<String?>(initialValue = null) {
-    value = if (appContainer.sessionManager.accessToken.first().isNullOrBlank()) {
+    value = if (sessionManager.accessToken.first().isNullOrBlank()) {
         Routes.LOGIN
     } else {
-        Routes.HABITS
+        Routes.MAIN
     }
 }
 ```
@@ -904,9 +1025,12 @@ val startDestination by produceState<String?>(initialValue = null) {
 Why:
 
 - If there is no saved token, show login.
-- If there is a token, open habits.
+- If there is a token, open the main shell with bottom navigation.
+- `SessionManager` is injected into `MainActivity` by Hilt.
 
 Result:
+
+- Returning users land directly on the Home tab inside `MainScreen`.
 
 - User stays logged in after app restart.
 - If the token expired, the habit ViewModel detects `HTTP 401`, clears the session, and navigates back to login.
@@ -1037,58 +1161,180 @@ Result:
 
 ## 23. Habit Home Screen
 
-The home screen is `presentation/habits/HabitListScreen.kt`.
+The Home tab is implemented in `presentation/habits/HabitListScreen.kt` and hosted by `presentation/main/MainScreen.kt`.
 
 It shows:
 
 - CozyTrack header, or `Welcome back, <name>` when `GET /api/me` returns a name.
 - Current server date.
 - Thought of the day.
-- Create habit card.
-- Daily/weekly chips.
+- Create habit card with daily/weekly chips for the new habit's frequency.
 - Show archived toggle.
-- Habit cards for today's entries/status.
+- Daily/weekly filter chips for the habit list below.
+- Habit cards for today's entries/status (filtered by the selected daily or weekly view).
 - Today's complete/not-complete button for each habit.
-- A hint telling the user to tap a habit to view streaks and the 365-day grid.
-- Bottom navigation-style visual bar.
+- A hint telling the user to tap the habit title to view streaks and the 365-day grid.
 
-The home page intentionally does not show the full 365-day grid anymore. It stays focused on "what do I need to do today?"
+The Home tab intentionally does not show the full 365-day grid anymore. It stays focused on "what do I need to do today?"
 
-When the user taps a habit card:
+Logout moved to the Profile tab so Home stays focused on daily habit actions.
+
+On each habit card, only the title row and hint text open detail. Edit, archive, delete, and today's check-in buttons stay separate so they remain tappable.
+
+When the user taps a habit title or hint:
 
 ```text
-HabitListScreen
+MainScreen (Home or Habits tab)
   -> onHabitClick(habit.id)
-  -> navController.navigate(Routes.habitDetail(habit.id))
+  -> innerNavController.navigate(Routes.habitDetail(habit.id))
   -> HabitDetailScreen
 ```
 
 Why:
 
 - The home page stays simple.
+- Action buttons on the card are not wrapped in one giant clickable area.
 - The detail page can focus on one habit's history.
 - Each habit has independent entries, current streak, and best streak.
 
-Daily/weekly chips:
+Daily/weekly chips in the create card choose the frequency for a **new** habit:
 
 ```kotlin
 FilterChip(
     selected = frequency == Frequency.Daily,
     onClick = { onFrequencyChange(Frequency.Daily) },
-    label = { Text("☀️  Daily") }
+    label = { Text("☀ Daily") }
 )
 
 FilterChip(
     selected = frequency == Frequency.Weekly,
     onClick = { onFrequencyChange(Frequency.Weekly) },
-    label = { Text("🗓️  Weekly") }
+    label = { Text("📅 Weekly") }
 )
+```
+
+Daily/weekly filter chips below the archive toggle control which habits appear in the list:
+
+```kotlin
+HabitFrequencyFilterChips(
+    selected = state.habitListFrequencyFilter,
+    onSelectedChange = viewModel::onHabitListFrequencyFilterChange
+)
+
+val filteredHabits = state.filteredHabits
+```
+
+`HabitListUiState.filteredHabits` keeps only habits whose `frequency` matches the selected filter:
+
+```kotlin
+val filteredHabits: List<Habit>
+    get() = habits.filter { it.frequency == habitListFrequencyFilter }
 ```
 
 Why:
 
 - The backend accepts `daily` or `weekly`.
-- The UI maps chip selection to the `Frequency` enum.
+- Create chips and list filter chips are separate so picking a new-habit frequency does not accidentally hide habits in the list.
+- Tapping **Daily** shows only daily habits; tapping **Weekly** shows only weekly habits.
+- The same filter is shared between Home and Habits because both screens read `habitListFrequencyFilter` from the shared ViewModel.
+
+## 23.1 Main Shell And Bottom Navigation
+
+`presentation/main/MainScreen.kt` is the logged-in shell.
+
+It owns:
+
+- The shared `Scaffold`.
+- The functional `CozyBottomBar` from `presentation/components/CozyBottomBar.kt`.
+- Tab selection state with `rememberSaveable`.
+- One shared `HabitListViewModel` passed into all four tabs and into `HabitDetailScreen`.
+- An inner `NavHost` with `rememberNavController()` for tab content and habit detail.
+- Lifecycle resume handling that calls `viewModel.loadHome()` when the app returns to the foreground.
+
+Tab behavior:
+
+| Tab | Screen | Purpose |
+| --- | --- | --- |
+| Home | `HabitListScreen` | Daily dashboard, create habit, check-ins |
+| Habits | `HabitsTabScreen` | Simple list of habits with streak summary |
+| Stats | `StatsScreen` | 30-day consistency line chart and streak overview |
+| Profile | `ProfileScreen` | Settings, archived toggle, logout |
+
+Inner navigation behavior:
+
+```kotlin
+val onDetailScreen = navBackStackEntry?.destination?.route
+    ?.startsWith(Routes.HABIT_DETAIL) == true
+
+Scaffold(
+    bottomBar = {
+        if (!onDetailScreen) {
+            CozyBottomBar(...)
+        }
+    }
+) { innerPadding ->
+    NavHost(
+        navController = innerNavController,
+        startDestination = Routes.TABS,
+        modifier = Modifier.fillMaxSize().padding(innerPadding)
+    ) { ... }
+}
+```
+
+Why:
+
+- All tabs reuse the same loaded habit data instead of creating four separate ViewModels.
+- Habit detail reuses that same ViewModel, so streak and heatmap data are already available when detail opens.
+- Bottom navigation stays visible on the tab shell but hides on habit detail.
+- Tab taps switch content instantly without losing ViewModel state.
+- Back from detail calls `innerNavController.popBackStack()` and returns to the previously selected tab.
+
+## 23.2 Habits Tab
+
+`presentation/habits/HabitsTabScreen.kt` shows a simplified list:
+
+- Habit title and frequency.
+- Current streak and completion rate.
+- Done/Pending status for today.
+- The same daily/weekly filter chips as Home.
+- Tap a row to open `HabitDetailScreen`.
+
+The Habits tab uses `state.filteredHabits`, so switching between Daily and Weekly on either Home or Habits keeps the same filtered view.
+
+## 23.3 Stats Tab
+
+`presentation/stats/StatsScreen.kt` shows consistency analytics:
+
+- Summary cards for recent consistency, average completion rate, and best streak.
+- A 30-day line chart drawn with Compose `Canvas`.
+- Optional filter chips for all habits or one selected habit.
+- Per-habit streak overview cards labeled `Consistent` or `Building`.
+
+The chart uses heatmap entry data already loaded by `HabitListViewModel`:
+
+```kotlin
+fun computeConsistencyTrend(
+    habits: List<Habit>,
+    heatmapByHabitId: Map<String, List<HabitHeatmapDay>>,
+    days: Int = 30
+): List<ConsistencyPoint>
+```
+
+For each day, the app calculates what percentage of active habits were completed.
+
+## 23.4 Profile Tab
+
+`presentation/profile/ProfileScreen.kt` is the settings page:
+
+- Profile header with user name and active habit count.
+- Toggle for showing archived habits.
+- Account info rows for signed-in name, active habits, and server UTC date.
+- Log out button.
+
+Why:
+
+- Settings and logout belong together instead of cluttering the Home header.
+- The archived-habit toggle still works globally because it updates the shared ViewModel state.
 
 ## 24. Habit ViewModel
 
@@ -1105,24 +1351,39 @@ data class HabitListUiState(
     val utcCalendarDate: String = "",
     val newHabitTitle: String = "",
     val newHabitFrequency: Frequency = Frequency.Daily,
+    val habitListFrequencyFilter: Frequency = Frequency.Daily,
     val includeArchived: Boolean = false,
     val editingHabitId: String? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedOut: Boolean = false
-)
+) {
+    val filteredHabits: List<Habit>
+        get() = habits.filter { it.frequency == habitListFrequencyFilter }
+}
 ```
 
 Why:
 
-- `habits`: list of habit cards.
+- `habits`: full list of habit cards loaded from the API.
+- `filteredHabits`: habits shown on Home and Habits after the daily/weekly filter is applied.
 - `progressByHabitId`: current/best streak data.
 - `heatmapByHabitId`: 365-day completed state.
 - `checkedHabitIds`: whether today's check-in is completed.
 - `userName`: display name loaded from `GET /api/me` when available.
 - `utcCalendarDate`: authoritative server date.
+- `newHabitFrequency`: frequency selected while creating a habit.
+- `habitListFrequencyFilter`: daily or weekly filter for the habit list.
 - `includeArchived`: controls archived habits.
 - `editingHabitId`: tracks edit mode.
+
+Filter updates:
+
+```kotlin
+fun onHabitListFrequencyFilterChange(value: Frequency) {
+    _uiState.update { it.copy(habitListFrequencyFilter = value) }
+}
+```
 
 ## 25. Loading Home Data
 
@@ -1231,9 +1492,13 @@ Result:
 
 ## 27. Checking In
 
-User taps `Complete today` or `Not complete`.
+User taps **Complete today** on a habit that is not yet completed for the current UTC day.
 
-The button only controls the current backend UTC day. It does not edit yesterday or tomorrow.
+Once a habit is marked complete for today:
+
+- The button changes to **Completed**
+- The button becomes disabled
+- The user cannot undo or revert today's completion from the app
 
 Before sending the request, the ViewModel refreshes the server clock:
 
@@ -1258,22 +1523,37 @@ Why:
 - Refreshing `GET /api/clock` prevents accidentally changing the wrong day.
 - The backend still decides the actual check-in day.
 
-Then the ViewModel optimistically updates UI:
+The ViewModel rejects undo attempts:
+
+```kotlin
+fun onHabitCheckedChange(habitId: String, checked: Boolean) {
+    if (!checked || habitId in _uiState.value.checkedHabitIds) return
+    ...
+}
+```
+
+Then it optimistically updates UI in real time:
 
 ```kotlin
 checkedHabitIds = checkedHabitIds + habitId
+heatmapByHabitId = markHabitCompleteInHeatmap(
+    heatmapByHabitId = heatmapByHabitId,
+    habitId = habitId,
+    calendarDate = utcCalendarDate
+)
 ```
 
-For undoing today's completion:
+Why:
 
-```kotlin
-checkedHabitIds = checkedHabitIds - habitId
-```
+- The check-in card can show **Completed** immediately.
+- Today's heatmap square can turn completed immediately.
+- Current streak can recalculate immediately from the updated heatmap list.
+- The API call still runs afterward to persist the check-in on the backend.
 
 Then it calls:
 
 ```kotlin
-checkHabitUseCase(habitId = habitId, completed = checked)
+checkHabitUseCase(habitId = habitId, completed = true)
 ```
 
 Repository sends:
@@ -1296,15 +1576,14 @@ Important:
 - The app does not send date.
 - Backend assigns UTC day.
 - `completed: true` means complete today.
-- `completed: false` means mark today as not complete.
-- After success, the app reloads habit progress and entries.
+- After success, the app reloads habit progress and entries to stay in sync with the server.
+- If the request fails, the optimistic UI change is rolled back.
 
 Result:
 
-- Today's check-in card shows completed.
-- Today's heatmap square turns completed.
+- Today's check-in card shows **Completed** and stays disabled.
+- Today's heatmap square turns completed without waiting for the reload.
 - Current streak updates from completed heatmap entries.
-- If today's status is changed to not complete, current streak recalculates from the remaining completed history.
 
 ## 28. Streak Calculation
 
@@ -1368,6 +1647,8 @@ Result:
 
 The heatmap is shown on `HabitDetailScreen`, not directly on the home list.
 
+The UI lives in `presentation/habits/HabitHeatmapGrid.kt` and is rendered by the shared `HabitHeatmap(...)` composable.
+
 The heatmap uses:
 
 ```text
@@ -1384,12 +1665,114 @@ data class HabitHeatmapDay(
 )
 ```
 
+### GitHub-style layout
+
+The grid follows the same format as GitHub's contribution graph while keeping the existing CozyTrack colors and fonts:
+
+- **7 rows** = days of the week (Sunday through Saturday)
+- **Columns** = weeks across the rolling 365-day window
+- **Month labels** across the top (`Mar`, `Apr`, `May`, `Jun`, ...)
+- **Day labels** on the left (`Mon`, `Wed`, `Fri`) aligned to the same row height as the grid squares
+- **Today header** above the grid (`Today · 18 Jun 2026 · Thursday`)
+- **Horizontal scroll** pinned to the newest weeks so the full year stays visible
+- **Less → More** legend using the existing cream/tan/brown/red palette
+
+Important layout rule:
+
+- Month names are **not** placed inside one narrow week column.
+- Each month label is offset to the exact week column where that month starts.
+- The grid and month row share one calculated width so labels and squares stay aligned.
+
+Layout builder:
+
+```kotlin
+private data class MonthMarker(
+    val columnIndex: Int,
+    val label: String
+)
+
+private data class GitHubHeatmapLayout(
+    val weekColumns: List<List<HabitHeatmapDay?>>,
+    val monthMarkers: List<MonthMarker>
+)
+
+private fun gridWidth(weekCount: Int): Dp {
+    if (weekCount <= 0) return 0.dp
+    return cellSize * weekCount + cellGap * (weekCount - 1)
+}
+
+private fun columnOffset(columnIndex: Int): Dp {
+    return (cellSize + cellGap) * columnIndex
+}
+```
+
+Month markers are created when the month changes between week columns:
+
+```kotlin
+private fun buildMonthMarkers(weekColumns: List<List<HabitHeatmapDay?>>): List<MonthMarker>
+```
+
+Color rules stay the same:
+
+```kotlin
+private fun heatmapColor(day: HabitHeatmapDay): Color {
+    return when {
+        day.completed && day.isToday -> DeleteRed
+        day.completed -> BrownPrimary
+        day.isToday -> Color(0xFFE8C7A3)
+        else -> Color(0xFFF4E8D7)
+    }
+}
+```
+
+### Day selection
+
+Users can tap a square to inspect that day:
+
+```kotlin
+var selectedDay by remember(days) {
+    mutableStateOf(days.lastOrNull { it.isToday } ?: days.lastOrNull())
+}
+```
+
+The detail line below the grid shows:
+
+```text
+18 Jun 2026 · Wednesday · Completed (today)
+```
+
 Why:
+
+- The GitHub-style layout makes it easier to see which weekday and month each square belongs to.
+- Month labels sit above the week column where that month begins, like GitHub.
+- Day labels line up with the same 7-row grid used by the squares.
+- Tapping a day makes the history readable without changing backend data.
+- Today still gets a pink border; the selected day gets a brown border.
+
+### Real-time updates
+
+When the user completes today's habit, the ViewModel updates the heatmap immediately:
+
+```kotlin
+private fun markHabitCompleteInHeatmap(
+    heatmapByHabitId: Map<String, List<HabitHeatmapDay>>,
+    habitId: String,
+    calendarDate: String
+): Map<String, List<HabitHeatmapDay>>
+```
+
+Why:
+
+- The streak card and heatmap can update before the network reload finishes.
+- The UI feels live like GitHub's contribution graph.
+- The backend reload still runs afterward to confirm the saved entry.
+
+Why the data model exists:
 
 - Backend returns actual completed entries.
 - The UI fills missing dates as not completed.
-- Past/future days are read-only.
-- Only today's check-in button can create/update today's completion.
+- Past days are read-only in the grid.
+- Only today's check-in button can mark today complete.
 - The grid is a rolling 365-day history, not a permanently growing grid.
 - Tomorrow, a new day appears and the oldest day drops off.
 - Completed days are remembered because they come from backend entries, not hardcoded local UI state.
@@ -1400,7 +1783,8 @@ Result:
 - Completed days are brown.
 - Today completed is highlighted red/brown.
 - Uncompleted days are pale cream.
-- The heatmap scrolls to the newest days.
+- The heatmap scrolls to the newest weeks.
+- Tapping a square shows that day's status in plain language.
 
 Important:
 
@@ -1413,38 +1797,65 @@ Important:
 
 The detail screen is also implemented in `presentation/habits/HabitListScreen.kt` as `HabitDetailScreen`.
 
+It is opened from the inner `NavHost` inside `MainScreen`, not from the app-level `NavHost`.
+
 It receives a `habitId` from navigation:
 
 ```text
 habit_detail/{habitId}
 ```
 
-It finds that habit from the loaded state:
+It finds that habit from the shared `HabitListViewModel` state:
 
 ```kotlin
 val habit = state.habits.firstOrNull { it.id == habitId }
 ```
 
+Back navigation is wired in two places:
+
+```kotlin
+BackHandler(onBack = onBackClick)
+
+TextButton(onClick = onBackClick) {
+    Text("← Back")
+}
+```
+
+`MainScreen` passes:
+
+```kotlin
+onBackClick = {
+    if (!innerNavController.popBackStack()) {
+        innerNavController.navigate(Routes.TABS) {
+            popUpTo(Routes.TABS) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+}
+```
+
 Then it displays:
 
-- Back button.
+- Back button and Android system back support.
 - Selected habit title and management actions.
-- Today's complete/not-complete status for this habit.
+- Today's complete button for this habit (`Complete today` → `Completed`, no undo).
 - Current streak for this habit.
 - Best streak for this habit.
-- 365-day rolling grid for this habit.
+- GitHub-style 365-day rolling grid for this habit with tap-to-inspect days.
 
 Why:
 
 - The home page should not become crowded with every habit's full year history.
 - The detail page makes it clear that streaks and grids belong to one selected habit.
 - This matches the backend model: entries are fetched by `habitId`.
+- Nesting detail inside `MainScreen` keeps one ViewModel and makes Back, Edit, Archive, Delete, and check-in buttons interactive.
 
 Result:
 
 - Tapping `Read a Book` shows only `Read a Book` streaks and grid.
 - Tapping `Walk 10K Steps` shows only `Walk 10K Steps` streaks and grid.
 - Completing one habit does not complete or protect the streak for another habit.
+- Back returns to the tab the user came from.
 
 ## 31. Editing, Archiving, Restoring, Deleting
 
@@ -1666,7 +2077,7 @@ SignUpScreen
   -> AuthRepositoryImpl
   -> POST /api/auth/signup
   -> save accessToken + userId
-  -> navigate to habits
+  -> navigate to main
 ```
 
 Login:
@@ -1678,7 +2089,7 @@ LoginScreen
   -> AuthRepositoryImpl
   -> POST /api/auth/login
   -> save accessToken + userId
-  -> navigate to habits
+  -> navigate to main
 ```
 
 Load home:
@@ -1698,11 +2109,22 @@ HabitListScreen
 Open habit detail:
 
 ```text
-Tap a habit card
-  -> navController.navigate("habit_detail/{habitId}")
+Tap a habit title or hint on Home, or tap a row on Habits
+  -> innerNavController.navigate("habit_detail/{habitId}")
+  -> MainScreen hides bottom bar
   -> HabitDetailScreen
-  -> reads selected habit from HabitListViewModel state
+  -> reads selected habit from shared HabitListViewModel state
   -> shows only that habit's today's status, streaks, and 365-day grid
+```
+
+Back from habit detail:
+
+```text
+Tap Back or use system back
+  -> innerNavController.popBackStack()
+  -> return to Routes.TABS
+  -> bottom bar becomes visible again
+  -> previously selected tab is restored
 ```
 
 Create habit:
@@ -1717,12 +2139,14 @@ Add habit button
 Check in:
 
 ```text
-Check in button
+Tap Complete today
+  -> optimistic update: checkedHabitIds + today's heatmap square
   -> CheckHabitUseCase
   -> POST /api/habits/check
   -> backend assigns UTC day
   -> reload progress and entries
-  -> streak and heatmap update
+  -> button becomes Completed and disabled
+  -> streak and heatmap stay in sync
 ```
 
 Edit/archive/restore:
@@ -1759,11 +2183,19 @@ The final CozyTrack app is a backend-driven habit tracker:
 - Authentication is handled through the provided API.
 - Tokens are persisted with DataStore.
 - Protected API calls automatically include the Bearer token.
+- Dependencies are wired with Hilt modules instead of manual DI.
 - Habits are scoped to the logged-in user.
 - Check-ins use backend UTC date rules.
-- Home page shows today's habit statuses.
-- Habit detail page shows the selected habit's streaks and 365-day rolling grid.
-- Heatmap and streak UI reflect completed entries returned by the backend.
+- Home page shows today's habit statuses with a daily/weekly list filter.
+- Habit detail page shows the selected habit's streaks and a GitHub-style 365-day heatmap.
+- Habit detail is nested inside `MainScreen` and shares the same `HabitListViewModel` as the tabs.
+- Back from habit detail returns to the previous tab with a working Back button and system back gesture.
+- Today's check-in is one-way: **Complete today** becomes **Completed** and cannot be undone from the app.
+- Heatmap and streak UI update in real time when a habit is completed, then sync with the backend reload.
+- Tapping a heatmap square shows that day's date, weekday, and completed status.
 - Each habit has its own independent current streak and best streak.
 - Habit management supports create, update, archive, restore, and delete.
-- Login, signup, and home screens use a consistent cozy bear theme.
+- Login, signup, and main tabs use a consistent cozy bear theme.
+- Bottom navigation switches between Home, Habits, Stats, and Profile.
+- Stats shows a 30-day consistency line chart to visualize habit consistency.
+- Profile provides settings, archived-habit visibility, and logout.

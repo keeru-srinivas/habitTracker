@@ -1,12 +1,13 @@
 package com.example.cozytrack.core.network
 
 import com.example.cozytrack.core.session.SessionManager
+import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
 
-class AuthInterceptor(
+class AuthInterceptor @Inject constructor(
     private val sessionManager: SessionManager
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {

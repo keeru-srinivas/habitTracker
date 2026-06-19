@@ -1,9 +1,9 @@
 package com.example.cozytrack.presentation.habits
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -27,12 +26,10 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,67 +43,48 @@ import androidx.compose.ui.unit.dp
 import com.example.cozytrack.domain.model.Frequency
 import com.example.cozytrack.domain.model.Habit
 import com.example.cozytrack.domain.model.HabitProgress
-import java.text.SimpleDateFormat
-import java.util.Locale
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.cozytrack.presentation.components.BrownPrimary
+import com.example.cozytrack.presentation.components.CreamCard
+import com.example.cozytrack.presentation.components.DeepText
+import com.example.cozytrack.presentation.components.DeleteRed
+import com.example.cozytrack.presentation.components.GreenDone
+import com.example.cozytrack.presentation.components.MutedText
+import com.example.cozytrack.presentation.components.OrangeDone
+import com.example.cozytrack.presentation.components.PinkToday
+import com.example.cozytrack.presentation.components.PurplePrimary
+import com.example.cozytrack.presentation.components.ScreenBackground
+import com.example.cozytrack.presentation.components.prettyDate
 
 @Composable
 fun HabitListScreen(
     viewModel: HabitListViewModel,
     onHabitClick: (String) -> Unit,
-    onLoggedOut: () -> Unit
+    modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
     val errorMessage = state.errorMessage
+    val filteredHabits = state.filteredHabits
 
-    LaunchedEffect(state.isLoggedOut) {
-        if (state.isLoggedOut) {
-            onLoggedOut()
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(ScreenBackground)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            HeaderSection(
+                utcCalendarDate = state.utcCalendarDate,
+                userName = state.userName,
+                thoughtText = state.thought?.let { thought ->
+                    if (thought.author.isNullOrBlank()) {
+                        thought.quote
+                    } else {
+                        "${thought.quote} - ${thought.author}"
+                    }
+                }
+            )
         }
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.loadHome()
-            }
-        }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
-    Scaffold(
-        containerColor = ScreenBackground,
-        bottomBar = { CozyBottomBar() }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(ScreenBackground)
-                .padding(innerPadding)
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                HeaderSection(
-                    utcCalendarDate = state.utcCalendarDate,
-                    userName = state.userName,
-                    thoughtText = state.thought?.let { thought ->
-                        if (thought.author.isNullOrBlank()) {
-                            thought.quote
-                        } else {
-                            "${thought.quote} - ${thought.author}"
-                        }
-                    },
-                    onLogoutClick = viewModel::logout
-                )
-            }
 
             item {
                 CreateHabitSection(
@@ -125,6 +103,13 @@ fun HabitListScreen(
                 )
             }
 
+            item {
+                HabitFrequencyFilterChips(
+                    selected = state.habitListFrequencyFilter,
+                    onSelectedChange = viewModel::onHabitListFrequencyFilterChange
+                )
+            }
+
             if (errorMessage != null) {
                 item {
                     Text(
@@ -140,7 +125,13 @@ fun HabitListScreen(
                 }
             }
 
-            items(state.habits) { habit ->
+            if (filteredHabits.isEmpty() && !state.isLoading && state.habits.isNotEmpty()) {
+                item {
+                    EmptyFilteredHabitsCard(frequency = state.habitListFrequencyFilter)
+                }
+            }
+
+            items(filteredHabits) { habit ->
                 HabitCard(
                     habit = habit,
                     progress = state.progressByHabitId[habit.id],
@@ -165,7 +156,6 @@ fun HabitListScreen(
                 )
             }
         }
-    }
 }
 
 @Composable
@@ -173,11 +163,14 @@ fun HabitDetailScreen(
     viewModel: HabitListViewModel,
     habitId: String,
     onBackClick: () -> Unit,
-    onLoggedOut: () -> Unit
+    onLoggedOut: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
     val habit = state.habits.firstOrNull { it.id == habitId }
     val errorMessage = state.errorMessage
+
+    BackHandler(onBack = onBackClick)
 
     LaunchedEffect(state.isLoggedOut) {
         if (state.isLoggedOut) {
@@ -185,32 +178,13 @@ fun HabitDetailScreen(
         }
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.loadHome()
-            }
-        }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
-    Scaffold(
-        containerColor = ScreenBackground,
-        bottomBar = { CozyBottomBar() }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(ScreenBackground)
-                .padding(innerPadding)
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(ScreenBackground)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -280,7 +254,6 @@ fun HabitDetailScreen(
                     )
                 }
             }
-        }
     }
 }
 
@@ -288,44 +261,30 @@ fun HabitDetailScreen(
 private fun HeaderSection(
     utcCalendarDate: String,
     userName: String,
-    thoughtText: String?,
-    onLogoutClick: () -> Unit
+    thoughtText: String?
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                GradientIconBox(text = "🐻")
-                Column {
-                    Text(
-                        text = if (userName.isBlank()) {
-                            "CozyTrack"
-                        } else {
-                            "Welcome back, $userName"
-                        },
-                        color = DeepText,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Text(
-                        text = "Date: ${utcCalendarDate.prettyDate()}",
-                        color = MutedText,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-
-            TextButton(
-                onClick = onLogoutClick,
-                colors = ButtonDefaults.textButtonColors(contentColor = BrownPrimary)
-            ) {
-                Text("↪ Log out")
+            GradientIconBox(text = "🐻")
+            Column {
+                Text(
+                    text = if (userName.isBlank()) {
+                        "CozyTrack"
+                    } else {
+                        "Welcome back, $userName"
+                    },
+                    color = DeepText,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(
+                    text = "Date: ${utcCalendarDate.prettyDate()}",
+                    color = MutedText,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
 
@@ -357,6 +316,68 @@ private fun HeaderSection(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun HabitFrequencyFilterChips(
+    selected: Frequency,
+    onSelectedChange: (Frequency) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Show habits",
+                color = DeepText,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selected == Frequency.Daily,
+                    onClick = { onSelectedChange(Frequency.Daily) },
+                    label = { Text("☀ Daily") },
+                    colors = habitChipColors()
+                )
+
+                FilterChip(
+                    selected = selected == Frequency.Weekly,
+                    onClick = { onSelectedChange(Frequency.Weekly) },
+                    label = { Text("📅 Weekly") },
+                    colors = habitChipColors()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyFilteredHabitsCard(frequency: Frequency) {
+    val label = when (frequency) {
+        Frequency.Daily -> "daily"
+        Frequency.Weekly -> "weekly"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Text(
+            text = "No $label habits yet. Create one above or switch to the other filter.",
+            modifier = Modifier.padding(18.dp),
+            color = MutedText,
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
@@ -491,9 +512,7 @@ private fun HabitCard(
     onHabitClick: () -> Unit
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onHabitClick),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (isEditing) {
@@ -511,7 +530,8 @@ private fun HabitCard(
                 onEditClick = onEditClick,
                 onArchiveClick = onArchiveClick,
                 onRestoreClick = onRestoreClick,
-                onDeleteClick = onDeleteClick
+                onDeleteClick = onDeleteClick,
+                onTitleClick = onHabitClick
             )
         }
 
@@ -522,8 +542,10 @@ private fun HabitCard(
             onCheckedChange = onCheckedChange
         )
         Text(
-            text = "Tap this habit to view its streak and 365-day grid",
-            modifier = Modifier.padding(horizontal = 8.dp),
+            text = "Tap the habit title to view its streak and 365-day grid",
+            modifier = Modifier
+                .padding(horizontal = 8.dp)
+                .clickable(onClick = onHabitClick),
             color = MutedText,
             style = MaterialTheme.typography.bodySmall
         )
@@ -536,7 +558,8 @@ private fun HeatmapHeader(
     onEditClick: () -> Unit,
     onArchiveClick: () -> Unit,
     onRestoreClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onTitleClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -544,7 +567,15 @@ private fun HeatmapHeader(
         verticalAlignment = Alignment.Top
     ) {
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (onTitleClick != null) {
+                        Modifier.clickable(onClick = onTitleClick)
+                    } else {
+                        Modifier
+                    }
+                ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -651,16 +682,16 @@ private fun TodayCheckInSection(
             }
 
             Button(
-                enabled = enabled,
-                onClick = { onCheckedChange(!checked) },
+                enabled = enabled && !checked,
+                onClick = { onCheckedChange(true) },
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (checked) GreenDone else PurplePrimary,
-                    disabledContainerColor = Color(0xFFF7F1E6),
-                    disabledContentColor = GreenDone
+                    disabledContainerColor = if (checked) GreenDone else Color(0xFFF7F1E6),
+                    disabledContentColor = if (checked) Color.White else GreenDone
                 )
             ) {
-                Text(if (checked) "Not complete" else "Complete today")
+                Text(if (checked) "Completed" else "Complete today")
             }
         }
     }
@@ -776,7 +807,7 @@ private fun ProgressHeatmapCard(
 
             HabitHeatmap(days = days)
             Text(
-                text = "${days.size} day rolling history ending ${todayDate.prettyDate()}. Oldest days move off as new days are added.",
+                text = "Tap a square to see that day. ${days.size} day rolling history ending ${todayDate.prettyDate()}.",
                 color = MutedText,
                 style = MaterialTheme.typography.labelSmall
             )
@@ -826,55 +857,6 @@ private fun StreakStat(
                 style = MaterialTheme.typography.bodyMedium
             )
         }
-    }
-}
-
-@Composable
-private fun HabitHeatmap(days: List<HabitHeatmapDay>) {
-    val daysPerRow = if (days.isEmpty()) 1 else (days.size + 6) / 7
-    val rows = days.chunked(daysPerRow)
-    val scrollState = rememberScrollState()
-
-    LaunchedEffect(days.size, scrollState.maxValue) {
-        if (scrollState.maxValue > 0) {
-            scrollState.scrollTo(scrollState.maxValue)
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .horizontalScroll(scrollState)
-            .padding(vertical = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        rows.forEach { rowDays ->
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                rowDays.forEach { day ->
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .background(
-                                color = heatmapColor(day),
-                                shape = RoundedCornerShape(3.dp)
-                            )
-                            .border(
-                                width = if (day.isToday) 1.5.dp else 0.dp,
-                                color = if (day.isToday) PinkToday else Color.Transparent,
-                                shape = RoundedCornerShape(3.dp)
-                            )
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun heatmapColor(day: HabitHeatmapDay): Color {
-    return when {
-        day.completed && day.isToday -> DeleteRed
-        day.completed -> BrownPrimary
-        day.isToday -> Color(0xFFE8C7A3)
-        else -> Color(0xFFF4E8D7)
     }
 }
 
@@ -957,72 +939,3 @@ private fun habitChipColors() = FilterChipDefaults.filterChipColors(
     labelColor = DeepText
 )
 
-private fun String.prettyDate(): String {
-    if (isBlank()) return "Loading..."
-
-    return runCatching {
-        val input = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val output = SimpleDateFormat("dd MMM yyyy", Locale.US)
-        val parsedDate = input.parse(this) ?: return@runCatching this
-        output.format(parsedDate)
-    }.getOrDefault(this)
-}
-
-@Composable
-private fun CozyBottomBar() {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8ED)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            BottomNavItem(icon = "🏠", label = "Home", selected = true)
-            BottomNavItem(icon = "☑", label = "Habits", selected = false)
-            BottomNavItem(icon = "📊", label = "Stats", selected = false)
-            BottomNavItem(icon = "🐻", label = "Profile", selected = false)
-        }
-    }
-}
-
-@Composable
-private fun BottomNavItem(
-    icon: String,
-    label: String,
-    selected: Boolean
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = icon,
-            style = MaterialTheme.typography.titleMedium
-        )
-        Text(
-            text = label,
-            color = if (selected) BrownPrimary else MutedText,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.labelSmall
-        )
-    }
-}
-
-private val ScreenBackground = Color(0xFFFFF7EA)
-private val CreamCard = Color(0xFFFFF0D9)
-private val BrownPrimary = Color(0xFF9B5A2E)
-private val PurplePrimary = BrownPrimary
-private val PinkToday = Color(0xFFB87547)
-private val GreenDone = Color(0xFF23A55A)
-private val OrangeDone = Color(0xFFFF8A3D)
-private val DeleteRed = Color(0xFFD9584A)
-private val DeepText = Color(0xFF3B2416)
-private val MutedText = Color(0xFF8A6E5A)

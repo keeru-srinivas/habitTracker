@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.cozytrack.core.network.ApiResult
 import com.example.cozytrack.domain.usecase.auth.SignUpUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +22,8 @@ data class SignUpUiState(
     val isSignedUp: Boolean = false
 )
 
-class SignUpViewModel(
+@HiltViewModel
+class SignUpViewModel @Inject constructor(
     private val signUpUseCase: SignUpUseCase
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SignUpUiState())

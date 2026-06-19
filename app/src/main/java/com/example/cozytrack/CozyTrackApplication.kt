@@ -1,14 +1,7 @@
 package com.example.cozytrack
 
 import android.app.Application
-import com.example.cozytrack.core.di.AppContainer
+import dagger.hilt.android.HiltAndroidApp
 
-class CozyTrackApplication : Application() {
-    lateinit var appContainer: AppContainer
-        private set
-
-    override fun onCreate() {
-        super.onCreate()
-        appContainer = AppContainer(this)
-    }
-}
+@HiltAndroidApp
+class CozyTrackApplication : Application()

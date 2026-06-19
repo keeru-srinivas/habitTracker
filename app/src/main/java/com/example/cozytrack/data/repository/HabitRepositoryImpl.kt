@@ -19,10 +19,11 @@ import com.example.cozytrack.domain.model.ServerClock
 import com.example.cozytrack.domain.repository.HabitRepository
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 import retrofit2.HttpException
 
-class HabitRepositoryImpl(
+class HabitRepositoryImpl @Inject constructor(
     private val api: HabitTrackerApi,
     private val sessionManager: SessionManager
 ) : HabitRepository {

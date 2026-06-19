@@ -10,6 +10,7 @@ import com.example.cozytrack.domain.model.AuthSession
 import com.example.cozytrack.domain.repository.AuthRepository
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -19,7 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import retrofit2.HttpException
 
-class AuthRepositoryImpl(
+class AuthRepositoryImpl @Inject constructor(
     private val api: HabitTrackerApi,
     private val sessionManager: SessionManager
 ) : AuthRepository {

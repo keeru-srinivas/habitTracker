@@ -1,12 +1,12 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-jinja2==3.1.2
-httpx==0.25.2
-firebase-admin==6.2.0
-python-dotenv==1.0.0
-pydantic==2.5.0
-pydantic[email]==2.5.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-dateutil==2.8.2
-email-validator==2.1.0
+# Python 3.14 needs pydantic>=2.11 (prebuilt wheels). Older pins fail to compile pydantic-core.
+fastapi>=0.115,<0.140
+uvicorn[standard]>=0.24
+jinja2>=3.1.2
+httpx>=0.25.2
+firebase-admin>=6.2.0
+python-dotenv>=1.0.0
+pydantic[email]>=2.11
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-dateutil>=2.8.2
+email-validator>=2.2.0

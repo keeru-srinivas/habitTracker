@@ -149,6 +149,7 @@ templates = Jinja2Templates(directory=str(_APP_DIR / "templates"))
 )
 async def rootPage(request: Request):
     return templates.TemplateResponse(
+        request,
         "landing.html",
         {"request": request},
     )
@@ -162,6 +163,7 @@ async def rootPage(request: Request):
 )
 async def appPage(request: Request):
     return templates.TemplateResponse(
+        request,
         "app.html",
         {
             "request": request,

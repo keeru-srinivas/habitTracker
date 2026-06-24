@@ -22,12 +22,22 @@ from models import (
     HabitEntryCreate,
     HabitEntryUpdate,
     HabitUpdate,
+    MediaCompleteRequest,
+    MediaItemCreate,
+    MediaItemResponse,
+    MediaItemUpdate,
     ServerClockResponse,
     UserCreate,
     HabitProgressResponse,
 )
 from util.dailyThought import fetch_daily_thought
-from util.security import requireEntryOwner, requireHabitOwner, verifyFirebaseToken
+from util.security import (
+    requireBookOwner,
+    requireEntryOwner,
+    requireHabitOwner,
+    requireMovieOwner,
+    verifyFirebaseToken,
+)
 from util.timeUtils import isoUtcNow, utcToday
 
 _APP_DESCRIPTION = """
@@ -55,6 +65,28 @@ The token is a standard Firebase ID JWT verified on the server (`verifyFirebaseT
 ## Inspiration
 
 - **`GET /api/thought`** (also **`GET /thought`**) — public; returns a thought / quote (proxied from ZenQuotes or Quotable, with a local fallback). Optional query **`format=text`** for a plain-text body.
+
+## Movies and books (watch / read lists)
+
+Separate from habits. Each user owns two Firestore **subcollections**:
+
+- **`users/{userId}/movies`** — watchlist items
+- **`users/{userId}/books`** — read-list items
+
+Document fields: **`id`**, **`userId`**, **`title`**, **`completed`**, **`rating`** (1–5 or null), **`review`**, **`completedAt`**, **`createdAt`**.
+
+| Action | Movies | Books |
+|--------|--------|-------|
+| Add | `POST /api/movies` `{ "title": "..." }` | `POST /api/books` `{ "title": "..." }` |
+| List | `GET /api/users/{userId}/movies` | `GET /api/users/{userId}/books` |
+| Get / update / delete | `GET`/`PUT`/`DELETE /api/movies/{movieId}` | `GET`/`PUT`/`DELETE /api/books/{bookId}` |
+| Mark done | `POST /api/movies/{movieId}/complete` | `POST /api/books/{bookId}/complete` |
+
+**Completing** (`completed: true`): **`rating`** (1–5) is **required** for both. **`review`** is **required for movies**, **optional for books**.  
+**Undo** (`completed: false`): clears **`rating`**, **`review`**, and **`completedAt`**.  
+Use **`PUT`** to edit **`title`**, **`rating`**, or **`review`** on an existing item without changing completion time logic on movies (title-only updates are fine anytime).
+
+The dev web UI at **`GET /app`** includes movies and books sections (star picker + review modal for movies).
 
 ## Cross-origin (CORS)
 
@@ -89,11 +121,25 @@ _OPENAPI_TAGS = [
         "name": "inspiration",
         "description": "Thought / quote of the day (**`GET /api/thought`**). No authentication.",
     },
+    {
+        "name": "movies",
+        "description": (
+            "Personal watchlist stored under **`users/{userId}/movies`**. "
+            "Marking watched requires **rating** (1–5) and **review**."
+        ),
+    },
+    {
+        "name": "books",
+        "description": (
+            "Personal read list stored under **`users/{userId}/books`**. "
+            "Marking read requires **rating** (1–5); **review** is optional."
+        ),
+    },
 ]
 
 app = FastAPI(
     title="Habit Tracker API",
-    version="1.0.0",
+    version="1.1.0",
     description=_APP_DESCRIPTION,
     openapi_tags=_OPENAPI_TAGS,
     swagger_ui_parameters={"persistAuthorization": True},
@@ -684,6 +730,228 @@ async def updateHabitEntry(
     await requireEntryOwner(currentUser["uid"], entryId)
     try:
         return await dbUtils.updateHabitEntry(entryId, entryUpdate)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- Movies (users/{userId}/movies subcollection) ----------------------------
+
+@app.post(
+    "/api/movies",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MediaItemResponse,
+    tags=["movies"],
+    summary="Add movie to watchlist",
+    description="Creates a row in **`users/{userId}/movies`** with `completed: false`.",
+)
+async def createMovie(
+    body: MediaItemCreate,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    try:
+        return await dbUtils.createMovie(currentUser["uid"], body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get(
+    "/api/users/{userId}/movies",
+    response_model=list[MediaItemResponse],
+    tags=["movies"],
+    summary="List movies for user",
+    description="**userId** must match the Bearer token UID. Newest first.",
+)
+async def getUserMovies(
+    userId: str,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    if userId != currentUser["uid"]:
+        raise HTTPException(status_code=403, detail="You can only list your own movies")
+    try:
+        return await dbUtils.getUserMovies(userId)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get(
+    "/api/movies/{movieId}",
+    response_model=MediaItemResponse,
+    tags=["movies"],
+    summary="Get movie by id",
+    description="Must own the movie (lives under your `users/{userId}/movies` subcollection).",
+)
+async def getMovie(movieId: str, currentUser: dict = Depends(verifyFirebaseToken)):
+    await requireMovieOwner(currentUser["uid"], movieId)
+    try:
+        return await dbUtils.getMovie(currentUser["uid"], movieId)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.put(
+    "/api/movies/{movieId}",
+    response_model=MediaItemResponse,
+    tags=["movies"],
+    summary="Update movie title or review",
+    description="Partial update: **title**, **rating** (1–5), and/or **review**.",
+)
+async def updateMovie(
+    movieId: str,
+    body: MediaItemUpdate,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    await requireMovieOwner(currentUser["uid"], movieId)
+    try:
+        return await dbUtils.updateMovie(currentUser["uid"], movieId, body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post(
+    "/api/movies/{movieId}/complete",
+    response_model=MediaItemResponse,
+    tags=["movies"],
+    summary="Mark movie watched or unwatched",
+    description=(
+        "When **completed** is true, **rating** (1–5) and **review** are required. "
+        "When false, clears completion, rating, and review."
+    ),
+)
+async def completeMovie(
+    movieId: str,
+    body: MediaCompleteRequest,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    await requireMovieOwner(currentUser["uid"], movieId)
+    try:
+        return await dbUtils.completeMovie(currentUser["uid"], movieId, body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete(
+    "/api/movies/{movieId}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["movies"],
+    summary="Delete movie from watchlist",
+    description="Permanently removes the document from **`users/{userId}/movies`**.",
+)
+async def deleteMovie(movieId: str, currentUser: dict = Depends(verifyFirebaseToken)):
+    await requireMovieOwner(currentUser["uid"], movieId)
+    try:
+        await dbUtils.deleteMovie(currentUser["uid"], movieId)
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- Books (users/{userId}/books subcollection) ------------------------------
+
+@app.post(
+    "/api/books",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MediaItemResponse,
+    tags=["books"],
+    summary="Add book to read list",
+    description="Creates a row in **`users/{userId}/books`** with `completed: false`.",
+)
+async def createBook(
+    body: MediaItemCreate,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    try:
+        return await dbUtils.createBook(currentUser["uid"], body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get(
+    "/api/users/{userId}/books",
+    response_model=list[MediaItemResponse],
+    tags=["books"],
+    summary="List books for user",
+    description="**userId** must match the Bearer token UID. Newest first.",
+)
+async def getUserBooks(
+    userId: str,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    if userId != currentUser["uid"]:
+        raise HTTPException(status_code=403, detail="You can only list your own books")
+    try:
+        return await dbUtils.getUserBooks(userId)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get(
+    "/api/books/{bookId}",
+    response_model=MediaItemResponse,
+    tags=["books"],
+    summary="Get book by id",
+    description="Must own the book (lives under your `users/{userId}/books` subcollection).",
+)
+async def getBook(bookId: str, currentUser: dict = Depends(verifyFirebaseToken)):
+    await requireBookOwner(currentUser["uid"], bookId)
+    try:
+        return await dbUtils.getBook(currentUser["uid"], bookId)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.put(
+    "/api/books/{bookId}",
+    response_model=MediaItemResponse,
+    tags=["books"],
+    summary="Update book title or review",
+    description="Partial update: **title**, **rating** (1–5), and/or **review**.",
+)
+async def updateBook(
+    bookId: str,
+    body: MediaItemUpdate,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    await requireBookOwner(currentUser["uid"], bookId)
+    try:
+        return await dbUtils.updateBook(currentUser["uid"], bookId, body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post(
+    "/api/books/{bookId}/complete",
+    response_model=MediaItemResponse,
+    tags=["books"],
+    summary="Mark book read or unread",
+    description=(
+        "When **completed** is true, **rating** (1–5) is required; **review** is optional. "
+        "When false, clears completion, rating, and review."
+    ),
+)
+async def completeBook(
+    bookId: str,
+    body: MediaCompleteRequest,
+    currentUser: dict = Depends(verifyFirebaseToken),
+):
+    await requireBookOwner(currentUser["uid"], bookId)
+    try:
+        return await dbUtils.completeBook(currentUser["uid"], bookId, body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete(
+    "/api/books/{bookId}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["books"],
+    summary="Delete book from read list",
+    description="Permanently removes the document from **`users/{userId}/books`**.",
+)
+async def deleteBook(bookId: str, currentUser: dict = Depends(verifyFirebaseToken)):
+    await requireBookOwner(currentUser["uid"], bookId)
+    try:
+        await dbUtils.deleteBook(currentUser["uid"], bookId)
+        return None
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

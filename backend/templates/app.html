@@ -47,6 +47,20 @@
         .thought-card { border-left: 4px solid var(--accent); }
         .thought-quote { font-size: 15px; line-height: 1.45; margin: 0 0 8px; font-style: italic; color: var(--fg); }
         .thought-meta { font-size: 12px; margin: 0; }
+        .media-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #eee; }
+        .media-item:last-child { border-bottom: none; }
+        .media-main { flex: 1; min-width: 0; }
+        .media-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; width: 112px; }
+        .media-actions button { margin-bottom: 0; padding: 8px 10px; font-size: 14px; }
+        .stars { color: #f1c40f; font-size: 14px; letter-spacing: 1px; }
+        .review-snippet { font-size: 13px; margin-top: 4px; color: #444; font-style: italic; }
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 100; }
+        .modal { background: #fff; border-radius: 12px; padding: 20px; width: 100%; max-width: 400px; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+        .modal h3 { margin: 0 0 12px; font-size: 1rem; }
+        textarea { width: 100%; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 15px; min-height: 80px; resize: vertical; font-family: inherit; }
+        .star-picker { display: flex; gap: 6px; margin-bottom: 12px; }
+        .star-picker button { width: auto; flex: 1; padding: 8px; font-size: 20px; background: #f4f4f4; color: #bbb; }
+        .star-picker button.active { background: #fff8e1; color: #f1c40f; border-color: #f1c40f; }
     </style>
 </head>
 <body>
@@ -109,6 +123,45 @@
             <h2 style="font-size:1rem;margin:0 0 8px;">Today <span id="utcDayLabel" class="muted" style="font-weight:400;font-size:13px;"></span></h2>
             <p class="muted" style="font-size:12px;margin:0 0 10px;">Checks use <code>GET /api/clock</code> (UTC). Progress uses <code>GET /api/habits/{id}/progress</code> (42-day window). Dots: <strong>daily</strong> = last 14 UTC days; <strong>weekly</strong> = last 14 ISO weeks (Mon–Sun), one dot per week.</p>
             <div id="habitList" class="muted">Loading…</div>
+        </div>
+
+        <div class="card">
+            <h2 style="font-size:1rem;margin:0 0 12px;">Movies to watch</h2>
+            <div id="movieErr" class="err hidden"></div>
+            <label>Movie title</label>
+            <input type="text" id="movieTitle" placeholder="Inception" />
+            <button type="button" id="btnAddMovie">Add movie</button>
+            <div id="movieList" class="muted" style="margin-top:12px;">Loading…</div>
+        </div>
+
+        <div class="card">
+            <h2 style="font-size:1rem;margin:0 0 12px;">Books to read</h2>
+            <div id="bookErr" class="err hidden"></div>
+            <label>Book title</label>
+            <input type="text" id="bookTitle" placeholder="Dune" />
+            <button type="button" id="btnAddBook">Add book</button>
+            <div id="bookList" class="muted" style="margin-top:12px;">Loading…</div>
+        </div>
+    </div>
+</div>
+
+<div id="completeModal" class="modal-backdrop hidden">
+    <div class="modal" role="dialog" aria-modal="true">
+        <h3 id="completeModalTitle">Mark as watched</h3>
+        <div id="completeModalErr" class="err hidden"></div>
+        <label>Rating (1–5 stars)</label>
+        <div class="star-picker" id="starPicker">
+            <button type="button" data-star="1">★</button>
+            <button type="button" data-star="2">★</button>
+            <button type="button" data-star="3">★</button>
+            <button type="button" data-star="4">★</button>
+            <button type="button" data-star="5">★</button>
+        </div>
+        <label id="reviewLabel">Review</label>
+        <textarea id="completeReview" placeholder="What did you think?"></textarea>
+        <div class="row">
+            <button type="button" id="btnCompleteConfirm">Save</button>
+            <button type="button" id="btnCompleteCancel" class="secondary">Cancel</button>
         </div>
     </div>
 </div>
@@ -309,6 +362,227 @@
         return d.innerHTML;
     }
 
+    function renderStars(rating) {
+        if (!rating) return '';
+        var filled = '';
+        for (var s = 1; s <= 5; s++) {
+            filled += s <= rating ? '★' : '☆';
+        }
+        return '<span class="stars" title="' + rating + '/5">' + filled + '</span>';
+    }
+
+    function renderMediaList(items, kind) {
+        if (!items.length) {
+            return 'Nothing here yet — add one above.';
+        }
+        var html = '';
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var done = !!item.completed;
+            html += '<div class="media-item">';
+            html += '<div class="media-main">';
+            html += '<strong>' + escapeHtml(item.title) + '</strong>';
+            if (done) {
+                html += '<br>' + renderStars(item.rating);
+                if (item.review) {
+                    html += '<div class="review-snippet">"' + escapeHtml(item.review) + '"</div>';
+                }
+            } else {
+                html += '<br><span class="muted">' + (kind === 'movie' ? 'Not watched yet' : 'Not read yet') + '</span>';
+            }
+            html += '</div>';
+            html += '<div class="media-actions">';
+            if (done) {
+                html += '<button type="button" class="secondary" data-edit-' + kind + '="' + encodeURIComponent(item.id) + '">Edit</button>';
+                html += '<button type="button" data-uncomplete-' + kind + '="' + encodeURIComponent(item.id) + '">Undo</button>';
+            } else {
+                html += '<button type="button" data-complete-' + kind + '="' + encodeURIComponent(item.id) + '" data-title="' + encodeURIComponent(item.title) + '">' + (kind === 'movie' ? 'Watched' : 'Read') + '</button>';
+            }
+            html += '<button type="button" class="danger outline" data-delete-' + kind + '="' + encodeURIComponent(item.id) + '">Delete</button>';
+            html += '</div></div>';
+        }
+        return html;
+    }
+
+    var pendingComplete = null;
+    var selectedRating = 0;
+
+    function openCompleteModal(kind, itemId, title, existing, isEdit) {
+        pendingComplete = { kind: kind, id: itemId, isEdit: !!isEdit };
+        selectedRating = (existing && existing.rating) ? existing.rating : 0;
+        document.getElementById('completeModalTitle').textContent =
+            kind === 'movie'
+                ? ('Rate: ' + title)
+                : ('Mark read: ' + title);
+        var reviewLabel = document.getElementById('reviewLabel');
+        reviewLabel.textContent = kind === 'movie' ? 'Review (required)' : 'Review (optional)';
+        document.getElementById('completeReview').value = (existing && existing.review) ? existing.review : '';
+        document.getElementById('completeModalErr').classList.add('hidden');
+        updateStarPicker();
+        document.getElementById('completeModal').classList.remove('hidden');
+    }
+
+    function closeCompleteModal() {
+        pendingComplete = null;
+        selectedRating = 0;
+        document.getElementById('completeModal').classList.add('hidden');
+    }
+
+    function updateStarPicker() {
+        document.querySelectorAll('#starPicker button').forEach(function (btn) {
+            var star = parseInt(btn.getAttribute('data-star'), 10);
+            btn.classList.toggle('active', star <= selectedRating);
+        });
+    }
+
+    document.querySelectorAll('#starPicker button').forEach(function (btn) {
+        btn.onclick = function () {
+            selectedRating = parseInt(btn.getAttribute('data-star'), 10);
+            updateStarPicker();
+        };
+    });
+
+    document.getElementById('btnCompleteCancel').onclick = closeCompleteModal;
+
+    document.getElementById('btnCompleteConfirm').onclick = async function () {
+        if (!pendingComplete) return;
+        var errEl = document.getElementById('completeModalErr');
+        errEl.classList.add('hidden');
+        var review = document.getElementById('completeReview').value.trim();
+        if (!selectedRating) {
+            errEl.textContent = 'Please pick a star rating (1–5).';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        if (pendingComplete.kind === 'movie' && !review) {
+            errEl.textContent = 'A review is required for movies.';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        var path = pendingComplete.kind === 'movie'
+            ? '/api/movies/' + encodeURIComponent(pendingComplete.id) + '/complete'
+            : '/api/books/' + encodeURIComponent(pendingComplete.id) + '/complete';
+        var kind = pendingComplete.kind;
+        var isEdit = pendingComplete.isEdit;
+        try {
+            if (isEdit) {
+                var putPath = kind === 'movie'
+                    ? '/api/movies/' + encodeURIComponent(pendingComplete.id)
+                    : '/api/books/' + encodeURIComponent(pendingComplete.id);
+                await apiFetch(putPath, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        rating: selectedRating,
+                        review: review || null,
+                    }),
+                });
+            } else {
+                await apiFetch(path, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        completed: true,
+                        rating: selectedRating,
+                        review: review || null,
+                    }),
+                });
+            }
+            closeCompleteModal();
+            if (kind === 'movie') await refreshMovies();
+            else await refreshBooks();
+        } catch (e) {
+            errEl.textContent = e.message;
+            errEl.classList.remove('hidden');
+        }
+    };
+
+    async function refreshMovies() {
+        var movieList = document.getElementById('movieList');
+        var userId = sessionStorage.getItem(UID_KEY);
+        if (!userId) return;
+        movieList.textContent = 'Loading…';
+        try {
+            var movies = await apiFetch('/api/users/' + encodeURIComponent(userId) + '/movies');
+            movieList.innerHTML = renderMediaList(movies, 'movie');
+            wireMediaActions(movieList, 'movie', refreshMovies);
+        } catch (e) {
+            movieList.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    async function refreshBooks() {
+        var bookList = document.getElementById('bookList');
+        var userId = sessionStorage.getItem(UID_KEY);
+        if (!userId) return;
+        bookList.textContent = 'Loading…';
+        try {
+            var books = await apiFetch('/api/users/' + encodeURIComponent(userId) + '/books');
+            bookList.innerHTML = renderMediaList(books, 'book');
+            wireMediaActions(bookList, 'book', refreshBooks);
+        } catch (e) {
+            bookList.textContent = 'Error: ' + e.message;
+        }
+    }
+
+    function wireMediaActions(container, kind, refreshFn) {
+        container.querySelectorAll('button[data-complete-' + kind + ']').forEach(function (btn) {
+            btn.onclick = function () {
+                var id = decodeURIComponent(btn.getAttribute('data-complete-' + kind));
+                var title = decodeURIComponent(btn.getAttribute('data-title') || 'Item');
+                openCompleteModal(kind, id, title, null, false);
+            };
+        });
+        container.querySelectorAll('button[data-edit-' + kind + ']').forEach(function (btn) {
+            btn.onclick = async function () {
+                var id = decodeURIComponent(btn.getAttribute('data-edit-' + kind));
+                var path = kind === 'movie'
+                    ? '/api/movies/' + encodeURIComponent(id)
+                    : '/api/books/' + encodeURIComponent(id);
+                try {
+                    var item = await apiFetch(path);
+                    openCompleteModal(kind, id, item.title, item, true);
+                } catch (e) {
+                    alert(e.message);
+                }
+            };
+        });
+        container.querySelectorAll('button[data-uncomplete-' + kind + ']').forEach(function (btn) {
+            btn.onclick = async function () {
+                var id = decodeURIComponent(btn.getAttribute('data-uncomplete-' + kind));
+                var path = kind === 'movie'
+                    ? '/api/movies/' + encodeURIComponent(id) + '/complete'
+                    : '/api/books/' + encodeURIComponent(id) + '/complete';
+                btn.disabled = true;
+                try {
+                    await apiFetch(path, {
+                        method: 'POST',
+                        body: JSON.stringify({ completed: false }),
+                    });
+                    await refreshFn();
+                } catch (e) {
+                    alert(e.message);
+                }
+                btn.disabled = false;
+            };
+        });
+        container.querySelectorAll('button[data-delete-' + kind + ']').forEach(function (btn) {
+            btn.onclick = async function () {
+                var id = decodeURIComponent(btn.getAttribute('data-delete-' + kind));
+                if (!confirm('Delete this item?')) return;
+                var path = kind === 'movie'
+                    ? '/api/movies/' + encodeURIComponent(id)
+                    : '/api/books/' + encodeURIComponent(id);
+                btn.disabled = true;
+                try {
+                    await apiFetch(path, { method: 'DELETE' });
+                    await refreshFn();
+                } catch (e) {
+                    alert(e.message);
+                }
+                btn.disabled = false;
+            };
+        });
+    }
+
     async function loadDailyThought() {
         var bodyEl = document.getElementById('thoughtBody');
         var attribEl = document.getElementById('thoughtAttrib');
@@ -349,6 +623,8 @@
         } catch (_) {}
         loadDailyThought();
         refreshHabits();
+        refreshMovies();
+        refreshBooks();
     }
 
     function showLogin() {
@@ -434,6 +710,50 @@
         } catch (e) {
             habitErr.textContent = e.message;
             habitErr.classList.remove('hidden');
+        }
+    };
+
+    document.getElementById('btnAddMovie').onclick = async function () {
+        var movieErr = document.getElementById('movieErr');
+        movieErr.classList.add('hidden');
+        var title = document.getElementById('movieTitle').value.trim();
+        if (!title) {
+            movieErr.textContent = 'Movie title required';
+            movieErr.classList.remove('hidden');
+            return;
+        }
+        try {
+            await apiFetch('/api/movies', {
+                method: 'POST',
+                body: JSON.stringify({ title: title }),
+            });
+            document.getElementById('movieTitle').value = '';
+            await refreshMovies();
+        } catch (e) {
+            movieErr.textContent = e.message;
+            movieErr.classList.remove('hidden');
+        }
+    };
+
+    document.getElementById('btnAddBook').onclick = async function () {
+        var bookErr = document.getElementById('bookErr');
+        bookErr.classList.add('hidden');
+        var title = document.getElementById('bookTitle').value.trim();
+        if (!title) {
+            bookErr.textContent = 'Book title required';
+            bookErr.classList.remove('hidden');
+            return;
+        }
+        try {
+            await apiFetch('/api/books', {
+                method: 'POST',
+                body: JSON.stringify({ title: title }),
+            });
+            document.getElementById('bookTitle').value = '';
+            await refreshBooks();
+        } catch (e) {
+            bookErr.textContent = e.message;
+            bookErr.classList.remove('hidden');
         }
     };
 

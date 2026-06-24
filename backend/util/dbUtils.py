@@ -1,6 +1,16 @@
 from firebase_admin import auth
 from firebase_config import db
-from models import UserCreate, HabitCreate, HabitUpdate, HabitEntryCreate, HabitEntryUpdate, HabitCheckRequest
+from models import (
+    UserCreate,
+    HabitCreate,
+    HabitUpdate,
+    HabitEntryCreate,
+    HabitEntryUpdate,
+    HabitCheckRequest,
+    MediaItemCreate,
+    MediaItemUpdate,
+    MediaCompleteRequest,
+)
 from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional, Any
 import hashlib
@@ -731,3 +741,193 @@ async def getHabitProgress(habitId: str, rangeStart: date, rangeEnd: date) -> di
         "last14Days": last14Days,
         "last14Weeks": last14Weeks,
     }
+
+
+def _mediaCollection(userId: str, kind: str):
+    """Firestore subcollection: users/{userId}/movies or users/{userId}/books."""
+    return db.collection("users").document(userId).collection(kind)
+
+
+def _normalizeMediaDoc(doc) -> dict:
+    data = doc.to_dict() or {}
+    if "id" not in data:
+        data["id"] = doc.id
+    return data
+
+
+async def createMediaItem(userId: str, kind: str, itemData: MediaItemCreate) -> dict:
+    """Create a movie or book watch/read list item under the user."""
+    try:
+        userDoc = db.collection("users").document(userId).get()
+        if not userDoc.exists:
+            raise Exception("User not found")
+
+        docRef = _mediaCollection(userId, kind).document()
+        itemDoc = {
+            "id": docRef.id,
+            "userId": userId,
+            "title": itemData.title.strip(),
+            "completed": False,
+            "rating": None,
+            "review": None,
+            "completedAt": None,
+            "createdAt": utcNow(),
+        }
+        docRef.set(itemDoc)
+        return itemDoc
+    except Exception as e:
+        label = "movie" if kind == "movies" else "book"
+        raise Exception(f"Error creating {label}: {str(e)}")
+
+
+async def getMediaItem(userId: str, kind: str, itemId: str) -> dict:
+    try:
+        doc = _mediaCollection(userId, kind).document(itemId).get()
+        if not doc.exists:
+            label = "Movie" if kind == "movies" else "Book"
+            raise Exception(f"{label} not found")
+        return _normalizeMediaDoc(doc)
+    except Exception as e:
+        raise Exception(f"Error getting media item: {str(e)}")
+
+
+async def getUserMediaItems(userId: str, kind: str) -> List[dict]:
+    try:
+        items = []
+        for doc in _mediaCollection(userId, kind).stream():
+            items.append(_normalizeMediaDoc(doc))
+        items.sort(key=lambda row: row.get("createdAt") or "", reverse=True)
+        return items
+    except Exception as e:
+        label = "movies" if kind == "movies" else "books"
+        raise Exception(f"Error getting user {label}: {str(e)}")
+
+
+async def updateMediaItem(
+    userId: str, kind: str, itemId: str, itemUpdate: MediaItemUpdate
+) -> dict:
+    try:
+        itemRef = _mediaCollection(userId, kind).document(itemId)
+        itemDoc = itemRef.get()
+        if not itemDoc.exists:
+            label = "Movie" if kind == "movies" else "Book"
+            raise Exception(f"{label} not found")
+
+        updateData = {}
+        if itemUpdate.title is not None:
+            updateData["title"] = itemUpdate.title.strip()
+        if itemUpdate.rating is not None:
+            updateData["rating"] = itemUpdate.rating
+        if itemUpdate.review is not None:
+            updateData["review"] = itemUpdate.review
+
+        if updateData:
+            itemRef.update(updateData)
+
+        return _normalizeMediaDoc(itemRef.get())
+    except Exception as e:
+        raise Exception(f"Error updating media item: {str(e)}")
+
+
+async def completeMediaItem(
+    userId: str,
+    kind: str,
+    itemId: str,
+    completeRequest: MediaCompleteRequest,
+    *,
+    requireReview: bool,
+) -> dict:
+    try:
+        itemRef = _mediaCollection(userId, kind).document(itemId)
+        itemDoc = itemRef.get()
+        if not itemDoc.exists:
+            label = "Movie" if kind == "movies" else "Book"
+            raise Exception(f"{label} not found")
+
+        if completeRequest.completed:
+            if completeRequest.rating is None:
+                raise Exception("rating is required (1-5) when marking as completed")
+            if requireReview and not (completeRequest.review or "").strip():
+                raise Exception("review is required when marking a movie as watched")
+            updateData = {
+                "completed": True,
+                "rating": completeRequest.rating,
+                "review": (completeRequest.review or "").strip(),
+                "completedAt": utcNow(),
+            }
+        else:
+            updateData = {
+                "completed": False,
+                "rating": None,
+                "review": None,
+                "completedAt": None,
+            }
+
+        itemRef.update(updateData)
+        return _normalizeMediaDoc(itemRef.get())
+    except Exception as e:
+        raise Exception(f"Error completing media item: {str(e)}")
+
+
+async def deleteMediaItem(userId: str, kind: str, itemId: str) -> bool:
+    try:
+        itemRef = _mediaCollection(userId, kind).document(itemId)
+        if not itemRef.get().exists:
+            label = "Movie" if kind == "movies" else "Book"
+            raise Exception(f"{label} not found")
+        itemRef.delete()
+        return True
+    except Exception as e:
+        raise Exception(f"Error deleting media item: {str(e)}")
+
+
+async def createMovie(userId: str, itemData: MediaItemCreate) -> dict:
+    return await createMediaItem(userId, "movies", itemData)
+
+
+async def getMovie(userId: str, movieId: str) -> dict:
+    return await getMediaItem(userId, "movies", movieId)
+
+
+async def getUserMovies(userId: str) -> List[dict]:
+    return await getUserMediaItems(userId, "movies")
+
+
+async def updateMovie(userId: str, movieId: str, itemUpdate: MediaItemUpdate) -> dict:
+    return await updateMediaItem(userId, "movies", movieId, itemUpdate)
+
+
+async def completeMovie(userId: str, movieId: str, completeRequest: MediaCompleteRequest) -> dict:
+    return await completeMediaItem(
+        userId, "movies", movieId, completeRequest, requireReview=True
+    )
+
+
+async def deleteMovie(userId: str, movieId: str) -> bool:
+    return await deleteMediaItem(userId, "movies", movieId)
+
+
+async def createBook(userId: str, itemData: MediaItemCreate) -> dict:
+    return await createMediaItem(userId, "books", itemData)
+
+
+async def getBook(userId: str, bookId: str) -> dict:
+    return await getMediaItem(userId, "books", bookId)
+
+
+async def getUserBooks(userId: str) -> List[dict]:
+    return await getUserMediaItems(userId, "books")
+
+
+async def updateBook(userId: str, bookId: str, itemUpdate: MediaItemUpdate) -> dict:
+    return await updateMediaItem(userId, "books", bookId, itemUpdate)
+
+
+async def completeBook(userId: str, bookId: str, completeRequest: MediaCompleteRequest) -> dict:
+    return await completeMediaItem(
+        userId, "books", bookId, completeRequest, requireReview=False
+    )
+
+
+async def deleteBook(userId: str, bookId: str) -> bool:
+    return await deleteMediaItem(userId, "books", bookId)

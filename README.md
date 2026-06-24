@@ -14,4 +14,4 @@ cd backend
 sudo ./deploy.sh
 ```
 
-Details: **`backend/README.md`** (auth, habits, weekly ISO weeks, CORS, curl examples).
+Details: **`backend/README.md`** (auth, habits, movies/books watchlists, weekly ISO weeks, CORS, curl examples).

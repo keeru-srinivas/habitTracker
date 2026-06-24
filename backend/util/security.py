@@ -42,3 +42,17 @@ async def requireEntryOwner(uid: str, entryId: str) -> dict:
     entryRow = await dbUtils.getHabitEntry(entryId)
     await requireHabitOwner(uid, entryRow["habitId"])
     return entryRow
+
+
+async def requireMovieOwner(uid: str, movieId: str) -> dict:
+    movieRow = await dbUtils.getMovie(uid, movieId)
+    if movieRow.get("userId") != uid:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your movie")
+    return movieRow
+
+
+async def requireBookOwner(uid: str, bookId: str) -> dict:
+    bookRow = await dbUtils.getBook(uid, bookId)
+    if bookRow.get("userId") != uid:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your book")
+    return bookRow

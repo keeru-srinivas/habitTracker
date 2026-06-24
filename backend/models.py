@@ -147,6 +147,59 @@ class ProgressDaySnapshot(BaseModel):
     )
 
 
+class MediaItemCreate(BaseModel):
+    """Add a movie or book to the user's watch/read list."""
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Display name of the movie or book.",
+        examples=["Inception", "Dune"],
+    )
+
+
+class MediaItemUpdate(BaseModel):
+    """Update title and/or review fields on an existing item."""
+
+    title: Optional[str] = Field(None, min_length=1, max_length=500)
+    rating: Optional[int] = Field(None, ge=1, le=5, description="Star rating 1–5.")
+    review: Optional[str] = Field(None, max_length=5000, description="Free-text review.")
+
+
+class MediaCompleteRequest(BaseModel):
+    """Mark a movie as watched or a book as read."""
+
+    completed: bool = Field(
+        ...,
+        description="When true, marks watched/read. When false, clears completion, rating, and review.",
+    )
+    rating: Optional[int] = Field(
+        None,
+        ge=1,
+        le=5,
+        description="Required when completed=true (movies and books).",
+    )
+    review: Optional[str] = Field(
+        None,
+        max_length=5000,
+        description="Required when completed=true for movies; optional for books.",
+    )
+
+
+class MediaItemResponse(BaseModel):
+    """A movie watchlist row or book read-list row."""
+
+    id: str = Field(..., description="Firestore document id in the user's subcollection.")
+    userId: str = Field(..., description="Owner UID (matches Bearer token).")
+    title: str
+    completed: bool = Field(..., description="True when watched (movie) or read (book).")
+    rating: Optional[int] = Field(None, ge=1, le=5, description="1–5 stars when completed.")
+    review: Optional[str] = Field(None, description="User review text when completed.")
+    completedAt: Optional[datetime] = Field(None, description="UTC timestamp when marked done.")
+    createdAt: datetime = Field(..., description="UTC timestamp when added to the list.")
+
+
 class HabitProgressResponse(BaseModel):
     """Rollups for a habit over [rangeStart, rangeEnd] (UTC). Streaks and rates follow frequency rules in OpenAPI / README."""
 

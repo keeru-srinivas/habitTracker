@@ -15,8 +15,8 @@
     <h1>Habit Tracker backend</h1>
     <p>Same server serves the <strong>REST API</strong> (for Android/iOS/web clients) and a small <strong>web UI</strong> for development.</p>
     <ul>
-        <li><a href="/app">Web app (login + habits)</a> — only <code>fetch</code> calls; uses <code>POST /api/auth/login</code> or <code>POST /api/auth/signup</code>, then <code>Authorization: Bearer &lt;accessToken&gt;</code>.</li>
-        <li><a href="/docs">OpenAPI (Swagger)</a> — <strong>auth</strong> tag for login/signup; <strong>Authorize</strong> with the returned <code>accessToken</code>.</li>
+        <li><a href="/app">Web app (login + habits + movies + books)</a> — only <code>fetch</code> calls; uses <code>POST /api/auth/login</code> or <code>POST /api/auth/signup</code>, then <code>Authorization: Bearer &lt;accessToken&gt;</code>.</li>
+        <li><a href="/docs">OpenAPI (Swagger)</a> — <strong>auth</strong> tag for login/signup; <strong>movies</strong> / <strong>books</strong> for watch/read lists; <strong>Authorize</strong> with the returned <code>accessToken</code>.</li>
         <li><a href="/redoc">ReDoc</a></li>
     </ul>
     <p>Auth is entirely on the backend: <code>POST /api/auth/signup</code> or <code>POST /api/auth/login</code> returns <code>accessToken</code>. Optional legacy <code>POST /api/users</code> creates an account without returning a token.</p>

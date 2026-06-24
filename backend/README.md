@@ -27,7 +27,8 @@ The API allows **any origin** (`Access-Control-Allow-Origin: *`). Auth uses **`A
 - **Auth**: `POST /api/auth/signup` and `POST /api/auth/login` — backend creates users and exchanges credentials for a Firebase ID JWT (`accessToken`). No Firebase SDK on the client.
 - **Device telemetry**: auth routes also store a lightweight `deviceEvents` record (IP, user-agent, coarse location lookup) so you can review device sign-ins and map approximate locations.
 - **Users & habits**: CRUD habits, check off days, list entries (Bearer required).
-- **Web UI (dev)**: `GET /app` uses plain `fetch` only (same flow as a mobile app hitting your REST API).
+- **Movies & books**: Personal watch/read lists in Firestore subcollections `users/{userId}/movies` and `users/{userId}/books` (Bearer required). Marking a movie watched requires rating + review.
+- **Web UI (dev)**: `GET /app` uses plain `fetch` only (habits, movies, books — same flow as a mobile app hitting your REST API).
 
 ## Project structure
 
@@ -35,7 +36,7 @@ The API allows **any origin** (`Access-Control-Allow-Origin: *`). Auth uses **`A
 |------|------|
 | `main.py` | FastAPI app, routes, Jinja templates for `/` and `/app` |
 | `util/authIdentity.py` | Server-side Identity Toolkit sign-in (`/api/auth/*`) |
-| `util/security.py` | Bearer extraction, `verifyFirebaseToken`, habit/entry ownership |
+| `util/security.py` | Bearer extraction, `verifyFirebaseToken`, habit/entry/movie/book ownership |
 | `util/dbUtils.py` | Firestore CRUD |
 | `util/timeUtils.py` | UTC “today” / RFC3339 timestamps |
 | `config.py` | Env loading; `firebaseWebApiKey`, `firebaseAuthDomain`, `firebaseProjectId`, credential paths |
@@ -152,6 +153,8 @@ All other `/api/*` routes require a valid **accessToken**. Examples:
 - `PUT /api/users/{userId}/name`
 - Habits: `POST /api/habits`, `GET /api/habits/{habitId}`, `GET /api/users/{userId}/habits`, `PUT`/`DELETE` habit, `GET /api/habits/{habitId}/progress` (aggregates + heatmap strips — see below)
 - Entries: `POST /api/habit-entries`, `POST /api/habits/check`, `GET`/`PUT` entries, date queries
+- **Movies**: `POST /api/movies`, `GET /api/users/{userId}/movies`, `GET`/`PUT`/`DELETE /api/movies/{movieId}`, `POST /api/movies/{movieId}/complete`
+- **Books**: `POST /api/books`, `GET /api/users/{userId}/books`, `GET`/`PUT`/`DELETE /api/books/{bookId}`, `POST /api/books/{bookId}/complete`
 
 Full detail: **`/docs`** (Swagger), **`/redoc`**, **`/openapi.json`**.
 
@@ -173,6 +176,30 @@ Response highlights:
 | Streaks | Consecutive successful **days** | Consecutive successful **weeks** |
 
 Weekly habits: at most one **`completed: true`** per ISO week on **`POST /api/habits/check`** (see Notes).
+
+### Movies and books
+
+Stored as Firestore **subcollections** under each user (not top-level collections):
+
+| Collection path | Purpose |
+|-----------------|--------|
+| `users/{userId}/movies` | Watchlist — add titles, mark watched with rating + review |
+| `users/{userId}/books` | Read list — add titles, mark read with rating (review optional) |
+
+| Route | Description |
+|-------|-------------|
+| `POST /api/movies` | Body: `{ "title": "Inception" }` |
+| `GET /api/users/{userId}/movies` | List your movies (newest first) |
+| `GET /api/movies/{movieId}` | Single movie |
+| `PUT /api/movies/{movieId}` | Update `title`, `rating`, and/or `review` |
+| `POST /api/movies/{movieId}/complete` | `{ "completed": true, "rating": 5, "review": "..." }` — **review required** when marking watched; `{ "completed": false }` to undo |
+| `DELETE /api/movies/{movieId}` | Remove from watchlist |
+| `POST /api/books` | Body: `{ "title": "Dune" }` |
+| `GET /api/users/{userId}/books` | List your books |
+| `GET` / `PUT` / `DELETE /api/books/{bookId}` | Same as movies |
+| `POST /api/books/{bookId}/complete` | **rating** required when `completed: true`; **review** optional |
+
+Swagger tags: **`movies`**, **`books`**.
 
 ## Usage examples (curl)
 
@@ -227,6 +254,45 @@ Do **not** send `date`. The server assigns the entry’s calendar day as **today
 curl -s "http://localhost:8010/api/clock"
 ```
 
+### Add movie to watchlist
+
+```bash
+curl -X POST "http://localhost:8010/api/movies" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '{"title":"Inception"}'
+```
+
+### Mark movie watched (rating + review required)
+
+```bash
+curl -X POST "http://localhost:8010/api/movies/<MOVIE_ID>/complete" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '{"completed":true,"rating":5,"review":"Mind-bending and rewatchable."}'
+```
+
+### List movies
+
+```bash
+curl "http://localhost:8010/api/users/<USER_ID>/movies" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+### Add book and mark read
+
+```bash
+curl -X POST "http://localhost:8010/api/books" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '{"title":"Dune"}'
+
+curl -X POST "http://localhost:8010/api/books/<BOOK_ID>/complete" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '{"completed":true,"rating":4,"review":"Epic sci-fi."}'
+```
+
 ## Data shapes (camelCase in JSON)
 
 - **User**: `id`, `email`, `name`, `createdAt`
@@ -234,6 +300,14 @@ curl -s "http://localhost:8010/api/clock"
 - **HabitEntry**: `id`, `habitId`, `date`, `completed`, `completedAt`
 - **HabitProgressResponse**: rollups, `last14Days`, optional `last14Weeks` (weekly habits); see schema in `/docs`
 - **DailyThoughtResponse** (`/api/thought`): `text`, `author`, `source`
+- **MediaItemResponse** (movies & books): `id`, `userId`, `title`, `completed`, `rating` (1–5 or null), `review`, `completedAt`, `createdAt`
+
+Firestore layout for media lists:
+
+```text
+users/{userId}/movies/{movieId}
+users/{userId}/books/{bookId}
+```
 
 ## Notes
 

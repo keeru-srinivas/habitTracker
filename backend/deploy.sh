@@ -16,8 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=../../deploy-lib.sh
-source "${SCRIPT_DIR}/../../deploy-lib.sh"
+# shellcheck source=../../deployLib.sh
+source "${SCRIPT_DIR}/../../dktp/deployLib.sh"
 APP_ROOT="${SCRIPT_DIR}"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ECOSYSTEM="${APP_ROOT}/ecosystem.config.cjs"

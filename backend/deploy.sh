@@ -16,6 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../../deploy-lib.sh
+source "${SCRIPT_DIR}/../../deploy-lib.sh"
 APP_ROOT="${SCRIPT_DIR}"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ECOSYSTEM="${APP_ROOT}/ecosystem.config.cjs"
@@ -200,7 +202,10 @@ if [ "${SKIP_SSL:-0}" = "1" ]; then
     exit 0
 fi
 
-# --- Certbot -----------------------------------------------------------------------
+# --- Certbot (first setup only; renewal via certbot.timer) -------------------------
+if le_cert_exists "${DOMAIN}"; then
+    info "Certificate exists for ${DOMAIN} — skipped certbot."
+else
 banner "Let's Encrypt (certbot)"
 
 if ! command -v certbot &>/dev/null; then
@@ -252,6 +257,8 @@ if nginx -t 2>/dev/null; then
 else
     err "nginx -t failed after certbot"
     exit 1
+fi
+
 fi
 
 ELAPSED=$(( $(date +%s) - START_TS ))

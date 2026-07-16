@@ -132,6 +132,7 @@ nginx_install_conf() {
     local name="$2"
     if [ -d /etc/nginx/sites-available ]; then
         cp "${src}" "/etc/nginx/sites-available/${name}"
+        chmod 644 "/etc/nginx/sites-available/${name}"
         mkdir -p /etc/nginx/sites-enabled
         ln -sf "/etc/nginx/sites-available/${name}" "/etc/nginx/sites-enabled/${name}"
         rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
@@ -204,7 +205,13 @@ fi
 
 # --- Certbot (first setup only; renewal via certbot.timer) -------------------------
 if le_cert_exists "${DOMAIN}"; then
-    info "Certificate exists for ${DOMAIN} — skipped certbot."
+    if le_nginx_has_ssl "${DOMAIN}"; then
+        info "Certificate exists for ${DOMAIN} — HTTPS vhost OK."
+    else
+        step "Applying existing certificate to nginx (${DOMAIN})…"
+        le_install_nginx_ssl "${DOMAIN}" \
+            || warn "Could not apply SSL — run: sudo certbot install --cert-name ${DOMAIN}"
+    fi
 else
 banner "Let's Encrypt (certbot)"
 

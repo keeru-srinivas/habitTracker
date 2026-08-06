@@ -1,0 +1,10 @@
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/.env
+**/.env.*
+backend/firebase-config.json
+.git
+.github
+HabitTracker App
